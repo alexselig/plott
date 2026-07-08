@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ChartForge
 
-## Getting Started
+Build presentation-ready charts from your data. Upload a CSV/Excel file or paste
+a table and ChartForge proposes a chart — or start from a chart type and add data
+as you go. Edit charts by dragging bars and points directly, then export an image
+for your slides.
 
-First, run the development server:
+Every chart has a stable ID and timestamped version history, so an exported image
+can be linked back to the exact chart + version that produced it.
+
+See [SPEC.md](./SPEC.md) for the full design and roadmap.
+
+## Develop
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev      # start the dev server (http://localhost:3000)
+npm run build    # production build + type check
+npm run lint     # eslint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Built with Next.js 16 (App Router) + React 19 + TypeScript + Tailwind, and
+D3 (d3-scale / d3-shape) for rendering.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploy (VibeHub)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Hosted at **https://vibehub.microsoft.com/app/ppt-chart-builder/** (project id
+`alexselig-cgfhpm`). VibeHub is static-only, so the deploy builds a static
+export (`output: "export"`), excludes the server-only `/api/ai/suggest` route,
+and bakes `basePath`. The editor uses query-param routing (`/editor?id=…`) so a
+single static page serves any chart.
 
-## Learn More
+```bash
+# Redeploy a new version (needs ~/.env.vibehub with VIBEHUB_API_KEY):
+bash scripts/deploy-vibehub.sh "/app/alexselig-cgfhpm" "projectId=alexselig-cgfhpm"
+```
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+> On the static host, "Ask AI" shows *not configured* (it needs the server
+> route, which only runs in `npm run dev`). Everything else works client-side.

@@ -1,26 +1,125 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ */
+/* Plott design tokens (warm editorial / print-desk)                  */
+/* ------------------------------------------------------------------ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --paper: #f5f0e6; /* app background */
+  --canvas: #f0ebdf; /* editor center behind chart card */
+  --panel: #fffdf8; /* cards, inputs, chart card */
+  --rail: #faf7f0; /* left rail, right panel, search pill */
+  --chart-tint: #faf5ea; /* thumbnail/canvas chart bg (default style) */
+  --ink: #1f1c17; /* primary text, strong hairline */
+  --muted: #7d7565; /* secondary text */
+  --faint: #a4977f; /* eyebrows, meta */
+  --faint-2: #a49a88; /* grid labels, meta alt */
+  --rule: #e3dccd; /* hairline dividers */
+  --border: #d9d2c2; /* input/control borders */
+  --accent: #c8492e; /* vermillion — primary actions, active */
+  --accent-hover: #a5391f;
+  --accent-soft: #d68a76; /* secondary chart color */
+  --accent-tint: #e0b98a; /* tertiary chart color */
+
+  --background: var(--paper);
+  --foreground: var(--ink);
 }
 
 @theme inline {
+  --color-paper: var(--paper);
+  --color-canvas: var(--canvas);
+  --color-panel: var(--panel);
+  --color-rail: var(--rail);
+  --color-chart-tint: var(--chart-tint);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-rule: var(--rule);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-tint: var(--accent-tint);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-serif: var(--font-instrument-serif);
+  --font-sans: var(--font-plex-sans);
+  --font-mono: var(--font-plex-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-plex-sans), system-ui, -apple-system, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Serif display / masthead */
+.plott-serif {
+  font-family: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
+}
+/* Mono labels / eyebrows */
+.plott-mono {
+  font-family: var(--font-plex-mono), ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+}
+
+input,
+textarea,
+button,
+select {
+  font-family: inherit;
+}
+input[type="number"]::-webkit-inner-spin-button {
+  opacity: 0.35;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--accent) 26%, transparent);
+}
+
+/* Accent focus ring for interactive controls. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Loading splash bars. */
+@keyframes plott-load {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* Custom scrollbar for scroll areas. */
+.plott-scroll::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+.plott-scroll::-webkit-scrollbar-thumb {
+  background: #d3c9b5;
+  border-radius: 6px;
+}
+
+/* Checkerboard behind a chart when transparent-background export is on. */
+.cf-checkerboard {
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(45deg, #e4e4e7 25%, transparent 25%),
+    linear-gradient(-45deg, #e4e4e7 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e4e4e7 75%),
+    linear-gradient(-45deg, transparent 75%, #e4e4e7 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 0 9px, 9px -9px, -9px 0;
 }
