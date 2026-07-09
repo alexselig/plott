@@ -23,15 +23,15 @@ D3 (d3-scale / d3-shape) for rendering.
 
 ## Deploy (VibeHub)
 
-Hosted at **https://vibehub.microsoft.com/app/ppt-chart-builder/** (project id
-`alexselig-cgfhpm`). VibeHub is static-only, so the deploy builds a static
+Hosted at **https://vibehub.microsoft.com/app/plott/** (project id
+`alexselig-cgfhpm`, slug `plott`). VibeHub is static-only, so the deploy builds a static
 export (`output: "export"`), excludes the server-only `/api/ai/suggest` route,
 and bakes `basePath`. The editor uses query-param routing (`/editor?id=…`) so a
 single static page serves any chart.
 
 ```bash
 # Redeploy a new version (needs ~/.env.vibehub with VIBEHUB_API_KEY):
-bash scripts/deploy-vibehub.sh "/app/alexselig-cgfhpm" "projectId=alexselig-cgfhpm"
+bash scripts/deploy-vibehub.sh "/app/alexselig-cgfhpm" "projectId=alexselig-cgfhpm" "slug=plott"
 ```
 
 > On the static host, "Ask AI" shows *not configured* (it needs the server
