@@ -73,7 +73,7 @@ export function treatmentDefs(
   if (T === "depth3d") {
     kids.push(
       <filter key="d3" id={`${idp}-blur3d`} {...region}>
-        <feGaussianBlur in="SourceGraphic" stdDeviation={1.8 * s} />
+        <feGaussianBlur in="SourceGraphic" stdDeviation={1.3 * s} />
       </filter>,
     );
   }
@@ -126,9 +126,9 @@ export function paintFilledMark(
     case "depth3d":
       return (
         <g>
-          {shape({ fill: "rgba(20,15,10,.3)", transform: `translate(${4 * s},${7 * s})`, filter: `url(#${idp}-blur3d)` }, "sh")}
-          {shape({ fill: darken(c, 0.32), transform: `translate(${2 * s},${3.5 * s})` }, "side")}
-          {shape({ fill: lighten(c, 0.06), stroke: "rgba(0,0,0,.12)", strokeWidth: 1 * s }, "top")}
+          {shape({ fill: "rgba(20,15,10,.22)", transform: `translate(${3 * s},${5 * s})`, filter: `url(#${idp}-blur3d)` }, "sh")}
+          {shape({ fill: darken(c, 0.3), transform: `translate(${1.6 * s},${2.6 * s})` }, "side")}
+          {shape({ fill: lighten(c, 0.06), stroke: "rgba(0,0,0,.1)", strokeWidth: 0.8 * s }, "top")}
         </g>
       );
     case "blueprint":
@@ -196,8 +196,8 @@ export function paintLine(
     case "depth3d":
       return (
         <g>
-          {P({ stroke: "rgba(20,15,10,.28)", strokeWidth: 7 * s, transform: `translate(${2 * s},${3.5 * s})`, filter: `url(#${idp}-blur3d)` }, "sh")}
-          {P({ stroke: darken(c, 0.32), strokeWidth: 5 * s }, "side")}
+          {P({ stroke: "rgba(20,15,10,.24)", strokeWidth: 7 * s, transform: `translate(${1.6 * s},${2.6 * s})`, filter: `url(#${idp}-blur3d)` }, "sh")}
+          {P({ stroke: darken(c, 0.3), strokeWidth: 5 * s }, "side")}
           {P({ stroke: lighten(c, 0.06), strokeWidth: 3.5 * s, strokeLinecap: "round" }, "top")}
         </g>
       );
@@ -320,4 +320,19 @@ export function paintPoint(
 export function treatmentCardBg(T: TreatmentKey): string {
   const c = TREATMENTS[T].chrome;
   return c.cardSolid ?? c.card;
+}
+
+/**
+ * Confetti Pop's two decorative dots (accent, white-bordered) pinned at the
+ * top-right and bottom-left corners of the chart card. Drawn in the SVG so they
+ * appear in the editor, swatches, and exports uniformly.
+ */
+export function confettiDots(width: number, height: number, accent: string, s: number): ReactNode {
+  const inset = 8 * s;
+  return (
+    <g pointerEvents="none">
+      <circle cx={width - inset} cy={inset} r={7 * s} fill={accent} stroke="#ffffff" strokeWidth={1.6 * s} />
+      <circle cx={inset} cy={height - inset} r={4.5 * s} fill={accent} stroke="#ffffff" strokeWidth={1.6 * s} />
+    </g>
+  );
 }

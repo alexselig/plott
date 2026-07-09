@@ -6,7 +6,7 @@ import { curveCatmullRom, curveLinear, line as d3line } from "d3-shape";
 
 import { categories, numericValues, seriesList } from "@/lib/charts/access";
 import type { DragAxisInfo } from "@/lib/charts/ChartSVG";
-import { paintPoint } from "@/lib/charts/paint";
+import { barRadius, paintFilledMark, paintLine, paintPoint, type ShapeFn } from "@/lib/charts/paint";
 import type { TreatmentKey } from "@/lib/charts/styles";
 import { AXIS, FONT, fmt, GRID, INK } from "@/lib/charts/theme";
 import { histogramBins, waterfallSteps } from "@/lib/charts/transforms";
@@ -71,6 +71,15 @@ export function renderExtra(ctx: ExtraContext): ReactNode {
     default:
       return null;
   }
+}
+
+function treatParams(ctx: ExtraContext) {
+  return {
+    T: (ctx.treatment ?? "studioFlat") as TreatmentKey,
+    s: ctx.s ?? ctx.width / 200,
+    idp: ctx.idp ?? "x",
+    bg: ctx.bg ?? "#ffffff",
+  };
 }
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -155,6 +164,7 @@ function renderScatter(ctx: ExtraContext): ReactNode {
 
 function renderCombo(ctx: ExtraContext): ReactNode {
   const { spec, data, width, height, header, palette, labelColor = AXIS, labelFont = FONT, gridColor = GRID } = ctx;
+  const { T: cT, s: cs, idp: cidp, bg: cbg } = treatParams(ctx);
   const cats = categories(data, spec.encoding.x);
   const series = seriesList(data, spec);
   const bars = series[0];
@@ -181,12 +191,17 @@ function renderCombo(ctx: ExtraContext): ReactNode {
         <text key={`yr${i}`} x={iw + 8} y={yR(t) + 3.5} textAnchor="start" fontSize={11} fill={palette[1] ?? labelColor} fontFamily={labelFont}>{fmt(t)}</text>
       ))}
       <line x1={0} x2={iw} y1={ih} y2={ih} stroke={labelColor} />
-      {(bars?.values ?? []).map((v, i) => (
-        <rect key={i} x={band(cats[i]) ?? 0} y={yL(v)} width={band.bandwidth()} height={ih - yL(v)} rx={spec.style.barRadius ?? 3} fill={palette[0]} />
-      ))}
-      <path d={lineGen(pts) ?? ""} fill="none" stroke={palette[1] ?? "#e11d48"} strokeWidth={spec.style.lineWidth ?? 2.5} strokeLinejoin="round" />
+      {(bars?.values ?? []).map((v, i) => {
+        const bx = band(cats[i]) ?? 0;
+        const bw = band.bandwidth();
+        const h = Math.max(1, ih - yL(v));
+        const rx = barRadius(cT, bw, h, cs);
+        const shape: ShapeFn = (attrs, key) => <rect key={key} x={bx} y={yL(v)} width={bw} height={h} rx={rx} {...attrs} />;
+        return <g key={i}>{paintFilledMark(shape, palette, 0, cT, cs, cidp)}</g>;
+      })}
+      {paintLine(lineGen(pts) ?? "", palette, 1, cT, cs, cidp)}
       {pts.map(([px, py], i) => (
-        <circle key={i} cx={px} cy={py} r={3.5} fill="#fff" stroke={palette[1] ?? "#e11d48"} strokeWidth={2} />
+        <g key={i}>{paintPoint(px, py, 2.6 * cs, palette, 1, cT, cs, cidp, cbg)}</g>
       ))}
       {cats.map((c, i) => (
         <text key={c} x={cx(i)} y={ih + 16} textAnchor="middle" fontSize={11} fill={labelColor} fontFamily={labelFont}>{c}</text>
@@ -197,6 +212,7 @@ function renderCombo(ctx: ExtraContext): ReactNode {
 
 function renderHistogram(ctx: ExtraContext): ReactNode {
   const { spec, data, width, height, header, palette, labelColor = AXIS, labelFont = FONT, gridColor = GRID } = ctx;
+  const { T, s, idp } = treatParams(ctx);
   const vals = numericValues(data, spec.encoding.y?.[0] ?? spec.encoding.x);
   const bins = histogramBins(vals, 10);
   const m = { top: header, right: 20, bottom: 42, left: 52 };
@@ -213,9 +229,14 @@ function renderHistogram(ctx: ExtraContext): ReactNode {
           <text x={-8} y={y(t) + 3.5} textAnchor="end" fontSize={11} fill={labelColor} fontFamily={labelFont}>{fmt(t)}</text>
         </g>
       ))}
-      {bins.map((b, i) => (
-        <rect key={i} x={x(b.x0) + 1} y={y(b.count)} width={Math.max(0, x(b.x1) - x(b.x0) - 2)} height={ih - y(b.count)} rx={spec.style.barRadius ?? 3} fill={palette[0]} />
-      ))}
+      {bins.map((b, i) => {
+        const bx = x(b.x0) + 1;
+        const bw = Math.max(0, x(b.x1) - x(b.x0) - 2);
+        const h = Math.max(1, ih - y(b.count));
+        const rx = barRadius(T, bw, h, s);
+        const shape: ShapeFn = (attrs, key) => <rect key={key} x={bx} y={y(b.count)} width={bw} height={h} rx={rx} {...attrs} />;
+        return <g key={i}>{paintFilledMark(shape, palette, 0, T, s, idp)}</g>;
+      })}
       {bins.filter((_, i) => i % 2 === 0).map((b, i) => (
         <text key={i} x={x(b.x0)} y={ih + 16} textAnchor="middle" fontSize={10} fill={labelColor} fontFamily={labelFont}>{fmt(b.x0)}</text>
       ))}
@@ -274,18 +295,17 @@ function renderRadar(ctx: ExtraContext): ReactNode {
 }
 
 function renderWaterfall(ctx: ExtraContext): ReactNode {
-  const { spec, data, width, height, header, labelColor = AXIS, labelFont = FONT, gridColor = GRID } = ctx;
+  const { spec, data, width, height, header, labelColor = AXIS, labelFont = FONT, gridColor = GRID, palette } = ctx;
+  const { T, s, idp } = treatParams(ctx);
   const cats = categories(data, spec.encoding.x);
   const vals = numericValues(data, spec.encoding.y?.[0]);
   const steps = waterfallSteps(vals);
   const m = { top: header, right: 20, bottom: 42, left: 56 };
   const iw = Math.max(10, width - m.left - m.right);
   const ih = Math.max(10, height - m.top - m.bottom);
-  const allY = steps.flatMap((s) => [s.start, s.end]).concat(0);
+  const allY = steps.flatMap((st) => [st.start, st.end]).concat(0);
   const y = scaleLinear().domain([Math.min(...allY), Math.max(...allY)]).nice().range([ih, 0]);
   const band = scaleBand<string>().domain(cats).range([0, iw]).padding(0.3);
-  const UP = "#16a34a";
-  const DOWN = "#dc2626";
 
   return (
     <g transform={`translate(${m.left},${m.top})`}>
@@ -296,12 +316,17 @@ function renderWaterfall(ctx: ExtraContext): ReactNode {
         </g>
       ))}
       <line x1={0} x2={iw} y1={y(0)} y2={y(0)} stroke={labelColor} />
-      {steps.map((s, i) => {
-        const top = Math.min(y(s.start), y(s.end));
-        const h = Math.abs(y(s.start) - y(s.end));
-        return (
-          <rect key={i} x={band(cats[i]) ?? 0} y={top} width={band.bandwidth()} height={Math.max(1, h)} rx={spec.style.barRadius ?? 2} fill={s.value >= 0 ? UP : DOWN} />
-        );
+      {steps.map((st, i) => {
+        const top = Math.min(y(st.start), y(st.end));
+        const h = Math.max(1, Math.abs(y(st.start) - y(st.end)));
+        const bx = band(cats[i]) ?? 0;
+        const bw = band.bandwidth();
+        const rx = barRadius(T, bw, h, s);
+        // accent(0) rising, accent(1) falling, accent(2) start/end totals
+        const isTotal = i === 0 || i === steps.length - 1;
+        const ci = isTotal ? 2 : st.value >= 0 ? 0 : 1;
+        const shape: ShapeFn = (attrs, key) => <rect key={key} x={bx} y={top} width={bw} height={h} rx={rx} {...attrs} />;
+        return <g key={i}>{paintFilledMark(shape, palette, ci, T, s, idp)}</g>;
       })}
       {cats.map((c) => (
         <text key={c} x={(band(c) ?? 0) + band.bandwidth() / 2} y={ih + 16} textAnchor="middle" fontSize={11} fill={labelColor} fontFamily={labelFont}>{c}</text>
@@ -353,6 +378,7 @@ function renderHeatmap(ctx: ExtraContext): ReactNode {
 
 function renderFunnel(ctx: ExtraContext): ReactNode {
   const { spec, data, width, height, header, palette, labelFont = FONT } = ctx;
+  const { T, s, idp } = treatParams(ctx);
   const cats = categories(data, spec.encoding.x);
   const vals = numericValues(data, spec.encoding.y?.[0]);
   const m = { top: header, right: 20, bottom: 12, left: 20 };
@@ -365,13 +391,18 @@ function renderFunnel(ctx: ExtraContext): ReactNode {
   return (
     <g transform={`translate(${m.left},${m.top})`}>
       {vals.map((v, i) => {
-        const w = (v / maxV) * iw;
-        const x = (iw - w) / 2;
+        // Trapezoid: top width = own value, bottom width = next stage (tapering).
+        const wTop = (v / maxV) * iw;
+        const wBot = ((vals[i + 1] ?? v) / maxV) * iw;
+        const xTop = (iw - wTop) / 2;
+        const xBot = (iw - wBot) / 2;
         const yTop = i * rowH + rowH * 0.14;
         const h = rowH * 0.72;
+        const d = `M${xTop},${yTop} L${xTop + wTop},${yTop} L${xBot + wBot},${yTop + h} L${xBot},${yTop + h} Z`;
+        const shape: ShapeFn = (attrs, key) => <path key={key} d={d} {...attrs} />;
         return (
           <g key={i}>
-            <rect x={x} y={yTop} width={w} height={h} rx={spec.style.barRadius ?? 3} fill={palette[i % palette.length]} />
+            {paintFilledMark(shape, palette, i, T, s, idp)}
             <text x={iw / 2} y={yTop + h / 2 + 4} textAnchor="middle" fontSize={12} fontWeight={600} fill="#fff" fontFamily={labelFont}>
               {cats[i]} · {fmt(v)}
             </text>
@@ -384,19 +415,32 @@ function renderFunnel(ctx: ExtraContext): ReactNode {
 
 function renderKpi(ctx: ExtraContext): ReactNode {
   const { spec, data, width, height, header, palette, labelColor = AXIS, labelFont = FONT } = ctx;
+  const { T, s, idp } = treatParams(ctx);
   const series = seriesList(data, spec);
   const vals = series[0]?.values ?? [];
   const total = vals.reduce((a, b) => a + b, 0);
   const label = series[0]?.label ?? spec.title;
-  const cy = header + (height - header) / 2;
+  const cy = header + (height - header) * 0.4;
+  let spark: ReactNode = null;
+  if (vals.length >= 2) {
+    const mx = 44;
+    const top = cy + 44;
+    const bandH = Math.max(18, height - top - 20);
+    const vmin = Math.min(...vals);
+    const vmax = Math.max(...vals);
+    const span = vmax - vmin || 1;
+    const pts = vals.map((v, i) => [mx + (i / (vals.length - 1)) * (width - 2 * mx), top + bandH - ((v - vmin) / span) * bandH] as [number, number]);
+    spark = paintLine("M" + pts.map((p) => p.join(",")).join(" L"), palette, 0, T, s, idp);
+  }
   return (
     <g>
-      <text x={width / 2} y={cy} textAnchor="middle" fontSize={72} fontWeight={700} fill={palette[0] ?? INK} fontFamily={labelFont}>
+      <text x={width / 2} y={cy} textAnchor="middle" fontSize={72} fontWeight={700} fill={palette[0]} fontFamily={labelFont}>
         {total.toLocaleString()}
       </text>
-      <text x={width / 2} y={cy + 34} textAnchor="middle" fontSize={14} fill={labelColor} fontFamily={labelFont}>
+      <text x={width / 2} y={cy + 30} textAnchor="middle" fontSize={14} fill={labelColor} fontFamily={labelFont}>
         Total {label}
       </text>
+      {spark}
     </g>
   );
 }
