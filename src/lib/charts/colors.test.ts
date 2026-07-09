@@ -51,11 +51,11 @@ describe("colors", () => {
     expect(colorSlots(spec("barGrouped", ["a", "b"]), data)).toEqual(["Alpha", "Beta"]);
   });
 
-  it("single-series bars default to a uniform color", () => {
+  it("every bar cycles the palette by index", () => {
     const s = spec("bar", ["a"]);
     expect(effectiveColor(s, 0)).toBe("#111111");
-    expect(effectiveColor(s, 1)).toBe("#111111");
-    expect(effectiveColor(s, 2)).toBe("#111111");
+    expect(effectiveColor(s, 1)).toBe("#222222");
+    expect(effectiveColor(s, 2)).toBe("#333333");
   });
 
   it("pie and multi-series cycle the palette per slot", () => {
@@ -75,7 +75,7 @@ describe("colors", () => {
   it("clearing an override falls back to the palette and prunes empties", () => {
     const withOne = withColorOverride(spec("bar", ["a"]), 1, "#ff0000");
     const cleared = withColorOverride(withOne, 1, null);
-    expect(effectiveColor(cleared, 1)).toBe("#111111");
+    expect(effectiveColor(cleared, 1)).toBe("#222222");
     expect(cleared.style.colorOverrides).toBeUndefined();
   });
 

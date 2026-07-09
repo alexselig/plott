@@ -11,7 +11,7 @@ import StylePanel from "@/components/StylePanel";
 import ChartSVG from "@/lib/charts/ChartSVG";
 import { CHART_CATALOG, CHART_GROUP_LABELS, type ChartGroup } from "@/lib/charts/catalog";
 import { sampleFor } from "@/lib/charts/sample";
-import { PALETTES, STYLES, isPaletteKey, isStyleKey } from "@/lib/charts/styles";
+import { cardStyle, pageStyle, PALETTES, TREATMENTS, isPaletteKey, treatmentOf } from "@/lib/charts/styles";
 import { exportPng, exportSvg } from "@/lib/export/svg";
 import { addPreview, commitVersion, createDocument, getVersion, newChartId, nowIso } from "@/lib/id";
 import { dhashFromSvg } from "@/lib/phash";
@@ -131,13 +131,14 @@ export default function ChartEditor({
   const showBadge = !!spec.style.showIdBadge;
   const badge = showBadge ? `${doc.id} · v${exportVersion}` : undefined;
   const transparent = !!spec.style.transparentBackground;
+  const treatment = treatmentOf(spec.style);
+  const chrome = TREATMENTS[treatment].chrome;
 
-  const styleName = isStyleKey(spec.style.styleName ?? "") ? STYLES[spec.style.styleName as keyof typeof STYLES].name : spec.style.styleName;
-  const paletteKey = spec.style.paletteName ?? "auto";
+  const paletteKey = spec.style.paletteName ?? "signal";
   const subtitle =
     typeDisplayName(spec.kind) +
-    (styleName ? ` · ${styleName}` : "") +
-    (paletteKey !== "auto" && isPaletteKey(paletteKey) ? ` · ${PALETTES[paletteKey].name}` : "");
+    ` · ${TREATMENTS[treatment].name}` +
+    (isPaletteKey(paletteKey) ? ` · ${PALETTES[paletteKey].name}` : "");
 
   function editValue(key: string, row: number, value: number) {
     setData((d) => ({ ...d, rows: d.rows.map((r, i) => (i === row ? { ...r, [key]: value } : r)) }));
@@ -358,27 +359,28 @@ export default function ChartEditor({
         </div>
 
         {/* canvas */}
-        <div className="flex flex-1 flex-col items-center justify-center bg-canvas p-[34px]">
-          <div
-            className="w-full max-w-[640px] rounded-xl border border-rule bg-panel"
-            style={{ padding: "26px 26px 20px", boxShadow: "0 18px 44px -26px rgba(80,60,30,.4)" }}
-          >
-            <div className="plott-serif mb-1 text-[22px]">{spec.title}</div>
-            <div className="plott-mono mb-3.5 text-[10px] uppercase tracking-[0.1em] text-faint">{subtitle}</div>
+        <div className="flex flex-1 flex-col items-center justify-center p-[34px]" style={pageStyle(spec.style)}>
+          <div className="w-full max-w-[640px]" style={{ ...cardStyle(spec.style), padding: "26px 26px 20px" }}>
+            <div className="plott-serif mb-1 text-[22px]" style={{ color: chrome.dark ? "#f0eef5" : "#221f1a" }}>
+              {spec.title}
+            </div>
+            <div className="plott-mono mb-3.5 text-[10px] uppercase tracking-[0.1em]" style={{ color: chrome.labelColor }}>
+              {subtitle}
+            </div>
             <div className={`h-[330px] ${transparent ? "cf-checkerboard rounded-md" : ""}`}>
               <ChartSVG
                 spec={spec}
                 data={data}
                 width={580}
                 height={340}
-                transparent={transparent}
+                transparent
                 showTitle={false}
                 onEditValue={editValue}
                 fluid
               />
             </div>
           </div>
-          <div className="plott-mono mt-4 text-[11px] text-faint">
+          <div className="plott-mono mt-4 text-[11px]" style={{ color: chrome.dark ? "rgba(255,255,255,.55)" : "#a49a88" }}>
             ↕ Drag the bars to adjust values, or edit the table →
           </div>
         </div>

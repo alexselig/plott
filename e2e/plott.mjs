@@ -49,29 +49,29 @@ try {
 
   // --------------------------------------------------------------- editor
   await page.goto(`${BASE}/editor?kind=bar`, { waitUntil: "networkidle" });
-  await page.locator('rect[style*="ns-resize"]').first().waitFor();
+  await page.locator('[style*="ns-resize"]').first().waitFor();
 
-  // style switch to a dark style
+  // palette + treatment (drives the subtitle + bar colors)
   await page.getByRole("button", { name: "style", exact: true }).click();
-  await page.getByRole("button", { name: "Style Duotone" }).click();
+  await page.getByRole("button", { name: "Palette Forest" }).click();
   await page.waitForTimeout(200);
-  check("selecting Duotone gives the chart a dark canvas", (await page.locator('svg rect[fill="#1f1c17"]').count()) >= 1);
-
-  // palette override (custom dropdown with colored options)
-  await page.getByRole("button", { name: "Palette", exact: true }).click();
-  await page.getByRole("option", { name: "Palette Ocean" }).click();
+  check("Forest palette recolors the bars", (await page.locator('svg rect[fill="#1F7A5C"]').count()) >= 1);
+  await page.getByRole("button", { name: "Treatment Gradient Glow" }).click();
   await page.waitForTimeout(200);
-  check("Ocean palette recolors the bars", (await page.locator('svg rect[fill="#1f6f8b"]').count()) >= 1);
+  check("selecting a treatment updates the chart subtitle", await page.getByText(/Gradient Glow/).first().isVisible());
+  // back to Studio Flat so later drag reads a plain rect
+  await page.getByRole("button", { name: "Treatment Studio Flat" }).click();
+  await page.waitForTimeout(150);
 
   // type switch via rail → line
   await page.getByTitle("Line", { exact: true }).click();
   await page.waitForTimeout(200);
-  check("rail switches the chart type to line", (await page.locator("svg polyline").count()) >= 1);
+  check("rail switches the chart type to line", (await page.locator("svg path[stroke]").count()) >= 1);
 
   // back to column, drag a bar
   await page.getByTitle("Column", { exact: true }).click();
   await page.waitForTimeout(150);
-  const bar = page.locator('rect[style*="ns-resize"]').first();
+  const bar = page.locator('[style*="ns-resize"]').first();
   const box = await bar.boundingBox();
   const cx = box.x + box.width / 2;
   const topY = box.y + 4;

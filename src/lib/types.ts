@@ -92,6 +92,8 @@ export interface ChartStyle {
   /** Selected palette/style names (for the theme picker UI). */
   paletteName?: string;
   styleName?: string;
+  /** Selected visual treatment key (the 13-treatment system). */
+  treatment?: string;
   /** Per-slot color overrides keyed by color index (series index, or category
    *  index for pie/donut/funnel/bar). Overrides the palette for that slot. */
   colorOverrides?: Record<number, string>;

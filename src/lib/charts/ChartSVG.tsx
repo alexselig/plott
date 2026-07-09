@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { forwardRef, useId, useRef, type PointerEvent as ReactPointerEvent } from "react";
 
 import { max as d3max } from "d3-array";
 import { scaleBand, scaleLinear, scalePoint } from "d3-scale";
@@ -9,8 +9,10 @@ import { arc as d3arc, area as d3area, curveCatmullRom, curveLinear, line as d3l
 import { categories, seriesList } from "@/lib/charts/access";
 import { effectiveColor, resolvedPalette } from "@/lib/charts/colors";
 import { dragToValue, snapToHalf } from "@/lib/charts/interact";
+import { barRadius, paintArea, paintFilledMark, paintLine, paintPoint, treatmentDefs, type ShapeFn } from "@/lib/charts/paint";
 import { EXTRA_KINDS, renderExtra } from "@/lib/charts/renderExtra";
-import { AXIS, FONT, fmt, GRID, INK } from "@/lib/charts/theme";
+import { cardBg, TREATMENTS, treatmentOf } from "@/lib/charts/styles";
+import { FONT, fmt } from "@/lib/charts/theme";
 import type { ChartKind, ChartSpec, DataTable } from "@/lib/types";
 
 const CARTESIAN: ChartKind[] = [
@@ -28,16 +30,6 @@ const PIE_KINDS: ChartKind[] = ["pie", "donut"];
 const DRAGGABLE: ChartKind[] = ["bar", "barHorizontal", "barGrouped", "line", "lineMulti", "area"];
 // Kinds whose points support 2-D (x + y) drag editing.
 const POINT_DRAGGABLE: ChartKind[] = ["scatter", "bubble"];
-
-/** Whether a hex background is dark enough to need a light title. */
-function isDarkBg(hex: string): boolean {
-  const h = hex.replace("#", "");
-  const f = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
-  const n = parseInt(f, 16);
-  if (Number.isNaN(n)) return false;
-  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5;
-}
 
 interface Slice {
   label: string;
@@ -104,6 +96,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
 ) {
   const innerRef = useRef<SVGSVGElement | null>(null);
   const drag = useRef<DragState | null>(null);
+  const idp = "c" + useId().replace(/[^a-zA-Z0-9]/g, "");
 
   const setRef = (el: SVGSVGElement | null) => {
     innerRef.current = el;
@@ -250,25 +243,19 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
 
   const palette = resolvedPalette(spec, data);
   const color = (i: number) => effectiveColor(spec, i);
-  const barRadius = spec.style.barRadius ?? 3;
-  const lineWidth = spec.style.lineWidth ?? 2.5;
-  const pointRadius = spec.style.pointRadius ?? 3.5;
   const curveFn = spec.style.curve === "smooth" ? curveCatmullRom.alpha(0.5) : curveLinear;
-  // Plott "look & feel" treatment (defaulted for backward compatibility).
-  const bgColor = spec.style.bg ?? "#ffffff";
-  const labelFont = spec.style.labelFont ?? FONT;
-  const labelColor = spec.style.labelColor ?? AXIS;
-  const gridColor = spec.style.gridColor ?? GRID;
-  const gridStyleV = spec.style.gridStyle ?? (spec.style.showGrid ? "lines" : "none");
-  const gridDash = spec.style.gridDash ?? (spec.style.gridDashed ? "4 3" : undefined);
-  const showGridV = gridStyleV !== "none" && spec.style.showGrid !== false;
-  const shapeV = spec.style.shape ?? "rect";
-  const barWidthFrac = spec.style.barWidth ?? 0.62;
-  const dotStyleV = spec.style.dotStyle ?? "filled";
-  const lineDashArr = spec.style.lineDash;
-  const fillNone = spec.style.fillNone ?? false;
-  const valueSize = spec.style.valueSize ?? 11;
-  const titleColor = isDarkBg(bgColor) ? "#f5f0e6" : INK;
+  const T = treatmentOf(spec.style);
+  const chrome = TREATMENTS[T].chrome;
+  const s = width / 200; // treatment lengths are authored in a 200-wide viewBox
+  const bg = cardBg(spec.style);
+  const bgColor = bg;
+  const labelFont = FONT;
+  const labelColor = chrome.labelColor;
+  const titleColor = chrome.dark ? "#e9e6f2" : "#2a2722";
+  const defs = treatmentDefs(T, palette, s, idp);
+  const barFrac = 0.66;
+  const pointR = 2.6 * s;
+  const valueSize = 11;
   const cats = categories(data, spec.encoding.x);
   const series = seriesList(data, spec);
   const isPie = PIE_KINDS.includes(kind);
@@ -276,25 +263,6 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
   const showLegend = spec.style.showLegend && series.length > 1;
   const compact = !!spec.style.hideAxisLabels;
   const header = compact ? 8 : 28 + (showLegend ? 18 : 0);
-
-  const dotMarker = (cx: number, cy: number, c: string, key: string) => {
-    if (dotStyleV === "none") return null;
-    if (dotStyleV === "square")
-      return <rect key={key} x={cx - 4} y={cy - 4} width={8} height={8} fill={c} pointerEvents="none" />;
-    const r = pointRadius + 1;
-    return (
-      <circle
-        key={key}
-        cx={cx}
-        cy={cy}
-        r={r}
-        fill={dotStyleV === "hollow" ? bgColor : c}
-        stroke={c}
-        strokeWidth={2}
-        pointerEvents="none"
-      />
-    );
-  };
 
   const svgProps = {
     ref: setRef,
@@ -311,8 +279,11 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     } as React.CSSProperties,
   };
 
-  const bgRect = transparent ? null : (
-    <rect width={width} height={height} rx={6} fill={bgColor} />
+  const bgRect = (
+    <>
+      {defs}
+      {transparent ? null : <rect width={width} height={height} fill={bgColor} />}
+    </>
   );
 
   const title = showTitle ? (
@@ -357,16 +328,18 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     const values = series[0]?.values ?? [];
     const slices: Slice[] = cats.map((label, i) => ({ label, value: Math.max(0, values[i] ?? 0) }));
     const total = slices.reduce((a, b) => a + b.value, 0) || 1;
-    const arcs = d3pie<Slice>().value((d) => d.value).sort(null)(slices);
+    const arcs = d3pie<Slice>().value((d) => d.value).sort(null).padAngle((3.5 * Math.PI) / 180)(slices);
     const arcGen = d3arc<PieArcDatum<Slice>>().innerRadius(innerR).outerRadius(R);
     return (
       <svg {...svgProps}>
         {bgRect}
         {title}
         <g transform={`translate(${cx},${cy})`}>
-          {arcs.map((a, i) => (
-            <path key={i} d={arcGen(a) ?? ""} fill={color(i)} stroke={bgColor} strokeWidth={2} />
-          ))}
+          {arcs.map((a, i) => {
+            const d = arcGen(a) ?? "";
+            const shape: ShapeFn = (attrs, key) => <path key={key} d={d} {...attrs} />;
+            return <g key={i}>{paintFilledMark(shape, palette, i, T, s, idp)}</g>;
+          })}
         </g>
         {!compact && (
           <g transform={`translate(${width - legendW},${header + 4})`}>
@@ -395,7 +368,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
         {bgRect}
         {title}
         {(kind === "radar" || kind === "combo") && showLegend ? legendEl : null}
-        {renderExtra({ spec, data, width, height, header, palette, labelFont, labelColor, gridColor, gridStyle: gridStyleV, gridDash, bg: bgColor, pointDrag: pointEditable ? pointDragProps : undefined })}
+        {renderExtra({ spec, data, width, height, header, palette, labelColor, bg, treatment: T, s, idp, pointDrag: pointEditable ? pointDragProps : undefined })}
         {badgeEl}
       </svg>
     );
@@ -452,7 +425,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
 
   if (isHorizontal) {
     const x = scaleLinear().domain([0, vmax]).nice().range([0, iw]);
-    const yb = scaleBand<string>().domain(cats).range([0, ih]).padding(shapeV === "thin" ? 0.55 : 0.32);
+    const yb = scaleBand<string>().domain(cats).range([0, ih]).padding(0.32);
     const unitsPerPxX = x.domain()[1] / iw;
     axisEls = (
       <>
@@ -470,21 +443,17 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
       const bh = yb.bandwidth();
       const yTop = yb(cats[i]) ?? 0;
       const bw = Math.max(1, x(v) - x(0));
+      const rx = barRadius(T, bw, bh, s);
+      const shape: ShapeFn = (attrs, key) => (
+        <rect key={key} x={0} y={yTop} width={bw} height={bh} rx={rx} {...attrs} />
+      );
+      const drag = handleProps(s0?.key ?? "", i, "x", v, unitsPerPxX);
       return (
-        <g key={i}>
-          <rect
-            x={0}
-            y={yTop}
-            width={bw}
-            height={bh}
-            rx={shapeV === "pill" ? bh / 2 : barRadius}
-            fill={fillNone ? "none" : color(i)}
-            stroke={fillNone ? color(i) : "none"}
-            strokeWidth={fillNone ? 2 : undefined}
-            {...handleProps(s0?.key ?? "", i, "x", v, unitsPerPxX)}
-          />
+        <g key={i} {...drag}>
+          {paintFilledMark(shape, palette, i, T, s, idp)}
+          <rect x={0} y={yTop} width={bw} height={bh} fill="transparent" />
           {spec.style.showValueLabels && (
-            <text x={bw + 7} y={yTop + bh / 2 + 4} fontSize={valueSize} fontWeight={600} fill={spec.style.valueColor ?? color(i)} fontFamily={labelFont}>
+            <text x={bw + 7} y={yTop + bh / 2 + 4} fontSize={valueSize} fontWeight={600} fill={color(i)} fontFamily={labelFont}>
               {fmt(v)}
             </text>
           )}
@@ -502,22 +471,11 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
 
     axisEls = (
       <>
-        {showGridV &&
+        {!compact &&
           yticks.map((t, gi) => (
-            <g key={"g" + gi}>
-              {gridStyleV === "dots" ? (
-                cats.map((_, ci) => (
-                  <circle key={ci} cx={centerX(ci)} cy={y(t)} r={1.5} fill={gridColor} />
-                ))
-              ) : (
-                <line x1={0} x2={iw} y1={y(t)} y2={y(t)} stroke={gridColor} strokeWidth={1} strokeDasharray={gridDash} />
-              )}
-              {!compact && (
-                <text x={-8} y={y(t) + 3.5} textAnchor="end" fontSize={10} fill={labelColor} fontFamily={labelFont}>
-                  {fmt(t)}
-                </text>
-              )}
-            </g>
+            <text key={"g" + gi} x={-8} y={y(t) + 3.5} textAnchor="end" fontSize={10} fill={labelColor} fontFamily={labelFont}>
+              {fmt(t)}
+            </text>
           ))}
         {!compact &&
           cats.map((c, i) => (
@@ -532,102 +490,77 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
       const s0 = series[0];
       const vals = s0?.values ?? [];
       const slot = iw / Math.max(1, cats.length);
-      const bw = Math.max(1, slot * barWidthFrac);
+      const bw = Math.max(1, slot * barFrac);
       markEls = vals.map((v, i) => {
         const cx0 = centerX(i);
         const yy = Math.min(y(v), y(0));
-        const h = Math.abs(y(v) - y(0));
-        const c = color(i);
-        const valColor = spec.style.valueColor ?? color(0);
+        const h = Math.max(1, Math.abs(y(v) - y(0)));
+        const rx = barRadius(T, bw, h, s);
+        const shape: ShapeFn = (attrs, key) => (
+          <rect key={key} x={cx0 - bw / 2} y={yy} width={bw} height={h} rx={rx} {...attrs} />
+        );
         const drag = handleProps(s0?.key ?? "", i, "y", v, unitsPerPxY);
-        const valueLabel = spec.style.showValueLabels ? (
-          <text x={cx0} y={yy - 8} textAnchor="middle" fontSize={valueSize} fontWeight={600} fill={valColor} fontFamily={labelFont}>
-            {fmt(v)}
-          </text>
-        ) : null;
-        if (shapeV === "lollipop") {
-          return (
-            <g key={i}>
-              <line x1={cx0} y1={y(0)} x2={cx0} y2={y(v) + pointRadius + 2} stroke={c} strokeWidth={3} />
-              <circle cx={cx0} cy={y(v)} r={pointRadius + 2} fill={c} stroke={bgColor} strokeWidth={2} {...drag} />
-              {valueLabel}
-            </g>
-          );
-        }
-        const rx = shapeV === "pill" ? bw / 2 : barRadius;
         return (
-          <g key={i}>
-            <rect
-              x={cx0 - bw / 2}
-              y={yy}
-              width={bw}
-              height={Math.max(1, h)}
-              rx={rx}
-              fill={fillNone ? "none" : c}
-              stroke={fillNone ? c : "none"}
-              strokeWidth={fillNone ? 2.5 : undefined}
-              {...drag}
-            />
-            {valueLabel}
-            {editable && (
-              <circle cx={cx0} cy={y(v)} r={5} fill={bgColor} stroke={c} strokeWidth={2} style={{ cursor: "ns-resize" }} {...drag} />
+          <g key={i} {...drag}>
+            {paintFilledMark(shape, palette, i, T, s, idp)}
+            <rect x={cx0 - bw / 2} y={yy} width={bw} height={h} fill="transparent" />
+            {spec.style.showValueLabels && (
+              <text x={cx0} y={yy - 8} textAnchor="middle" fontSize={valueSize} fontWeight={600} fill={color(i)} fontFamily={labelFont}>
+                {fmt(v)}
+              </text>
             )}
           </g>
         );
       });
     } else if (kind === "barGrouped") {
-      const x1 = scaleBand<string>().domain(series.map((s) => s.key)).range([0, band.bandwidth()]).padding(0.12);
+      const x1 = scaleBand<string>().domain(series.map((sr) => sr.key)).range([0, band.bandwidth()]).padding(0.12);
       markEls = cats.flatMap((c, i) =>
-        series.map((s, si) => {
-          const v = s.values[i];
+        series.map((sr, si) => {
+          const v = sr.values[i];
           const yy = Math.min(y(v), y(0));
-          const h = Math.abs(y(v) - y(0));
+          const h = Math.max(1, Math.abs(y(v) - y(0)));
+          const bx = (band(c) ?? 0) + (x1(sr.key) ?? 0);
+          const bw = x1.bandwidth();
+          const rx = barRadius(T, bw, h, s);
+          const shape: ShapeFn = (attrs, key) => (
+            <rect key={key} x={bx} y={yy} width={bw} height={h} rx={rx} {...attrs} />
+          );
+          const drag = handleProps(sr.key, i, "y", v, unitsPerPxY);
           return (
-            <rect
-              key={`${si}-${i}`}
-              x={(band(c) ?? 0) + (x1(s.key) ?? 0)}
-              y={yy}
-              width={x1.bandwidth()}
-              height={h}
-              rx={barRadius}
-              fill={color(si)}
-              {...handleProps(s.key, i, "y", v, unitsPerPxY)}
-            />
+            <g key={`${si}-${i}`} {...drag}>
+              {paintFilledMark(shape, palette, si, T, s, idp)}
+              <rect x={bx} y={yy} width={bw} height={h} fill="transparent" />
+            </g>
           );
         }),
       );
     } else if (kind === "barStacked") {
       markEls = layerSegs.flatMap((seg, li) =>
-        seg.map(([lo, hi], i) => (
-          <rect
-            key={`${li}-${i}`}
-            x={band(cats[i]) ?? 0}
-            y={y(hi)}
-            width={band.bandwidth()}
-            height={Math.max(0, y(lo) - y(hi))}
-            fill={color(li)}
-          />
-        )),
+        seg.map(([lo, hi], i) => {
+          const bx = band(cats[i]) ?? 0;
+          const bw = band.bandwidth();
+          const yy = y(hi);
+          const h = Math.max(0, y(lo) - y(hi));
+          const shape: ShapeFn = (attrs, key) => (
+            <rect key={key} x={bx} y={yy} width={bw} height={h} {...attrs} />
+          );
+          return <g key={`${li}-${i}`}>{paintFilledMark(shape, palette, li, T, s, idp)}</g>;
+        }),
       );
     } else if (kind === "line" || kind === "lineMulti") {
       const lineGen = d3line<[number, number]>().x((d) => d[0]).y((d) => d[1]).curve(curveFn);
-      markEls = series.map((s, si) => {
-        const pts = s.values.map((v, i) => [centerX(i), y(v)] as [number, number]);
+      markEls = series.map((sr, si) => {
+        const pts = sr.values.map((v, i) => [centerX(i), y(v)] as [number, number]);
+        const d = lineGen(pts) ?? "";
         return (
           <g key={si}>
-            <path d={lineGen(pts) ?? ""} fill="none" stroke={color(si)} strokeWidth={lineWidth} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={lineDashArr ?? undefined} />
-            {s.values.map((v, i) => (
+            {paintLine(d, palette, si, T, s, idp)}
+            {sr.values.map((v, i) => (
               <g key={i}>
                 {editable && (
-                  <circle
-                    cx={centerX(i)}
-                    cy={y(v)}
-                    r={10}
-                    fill="transparent"
-                    {...handleProps(s.key, i, "y", v, unitsPerPxY)}
-                  />
+                  <circle cx={centerX(i)} cy={y(v)} r={10} fill="transparent" {...handleProps(sr.key, i, "y", v, unitsPerPxY)} />
                 )}
-                {dotMarker(centerX(i), y(v), color(si), "m" + i)}
+                {paintPoint(centerX(i), y(v), pointR, palette, si, T, s, idp, bg, { pointerEvents: "none" })}
               </g>
             ))}
           </g>
@@ -641,20 +574,14 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
       const lineGen = d3line<[number, number]>().x((d) => d[0]).y((d) => d[1]).curve(curveFn);
       markEls = (
         <g>
-          <path d={areaGen(pts) ?? ""} fill={color(0)} fillOpacity={0.22} />
-          <path d={lineGen(pts) ?? ""} fill="none" stroke={color(0)} strokeWidth={lineWidth} strokeLinejoin="round" strokeDasharray={lineDashArr ?? undefined} />
+          {paintArea(areaGen(pts) ?? "", palette, 0, T, idp)}
+          {paintLine(lineGen(pts) ?? "", palette, 0, T, s, idp)}
           {vals.map((v, i) => (
             <g key={i}>
               {editable && (
-                <circle
-                  cx={centerX(i)}
-                  cy={y(v)}
-                  r={10}
-                  fill="transparent"
-                  {...handleProps(s0?.key ?? "", i, "y", v, unitsPerPxY)}
-                />
+                <circle cx={centerX(i)} cy={y(v)} r={10} fill="transparent" {...handleProps(s0?.key ?? "", i, "y", v, unitsPerPxY)} />
               )}
-              {dotMarker(centerX(i), y(v), color(0), "m" + i)}
+              {paintPoint(centerX(i), y(v), pointR, palette, 0, T, s, idp, bg, { pointerEvents: "none" })}
             </g>
           ))}
         </g>
@@ -663,7 +590,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
       const areaGen = d3area<{ x: number; y0: number; y1: number }>().x((d) => d.x).y0((d) => d.y0).y1((d) => d.y1).curve(curveFn);
       markEls = layerSegs.map((seg, li) => {
         const segPts = seg.map(([lo, hi], i) => ({ x: centerX(i), y0: y(lo), y1: y(hi) }));
-        return <path key={li} d={areaGen(segPts) ?? ""} fill={color(li)} fillOpacity={0.9} />;
+        return <g key={li}>{paintArea(areaGen(segPts) ?? "", palette, li, T, idp)}</g>;
       });
     }
   }

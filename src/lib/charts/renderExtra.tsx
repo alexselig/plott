@@ -6,6 +6,8 @@ import { curveCatmullRom, curveLinear, line as d3line } from "d3-shape";
 
 import { categories, numericValues, seriesList } from "@/lib/charts/access";
 import type { DragAxisInfo } from "@/lib/charts/ChartSVG";
+import { paintPoint } from "@/lib/charts/paint";
+import type { TreatmentKey } from "@/lib/charts/styles";
 import { AXIS, FONT, fmt, GRID, INK } from "@/lib/charts/theme";
 import { histogramBins, waterfallSteps } from "@/lib/charts/transforms";
 import type { ChartKind, ChartSpec, DataTable } from "@/lib/types";
@@ -35,6 +37,10 @@ export interface ExtraContext {
   gridStyle?: "lines" | "dots" | "none";
   gridDash?: string;
   bg?: string;
+  /** Active treatment + scale + unique defs prefix (from ChartSVG). */
+  treatment?: TreatmentKey;
+  s?: number;
+  idp?: string;
   /** When present, scatter/bubble points become 2-D drag-editable. */
   pointDrag?: (
     row: number,
@@ -79,8 +85,11 @@ function mixWhite([r, g, b]: [number, number, number], t: number): string {
 }
 
 function renderScatter(ctx: ExtraContext): ReactNode {
-  const { spec, data, width, height, header, palette, labelColor = AXIS, labelFont = FONT, gridColor = GRID, pointDrag } = ctx;
-  const color = palette[0] ?? "#4f46e5";
+  const { spec, data, width, height, header, palette, labelColor = AXIS, labelFont = FONT, pointDrag } = ctx;
+  const T = (ctx.treatment ?? "studioFlat") as TreatmentKey;
+  const s = ctx.s ?? width / 200;
+  const idp = ctx.idp ?? "x";
+  const bg = ctx.bg ?? "#ffffff";
   const isBubble = spec.kind === "bubble";
   const xCol = data.columns.find((c) => c.key === spec.encoding.x);
   const xEditable = !!spec.encoding.x && xCol?.type === "number";
@@ -103,7 +112,6 @@ function renderScatter(ctx: ExtraContext): ReactNode {
   const x = scaleLinear().domain([Math.min(0, xe[0] ?? 0), (xe[1] ?? 1) || 1]).nice().range([0, iw]);
   const y = scaleLinear().domain([Math.min(0, ye[0] ?? 0), (ye[1] ?? 1) || 1]).nice().range([ih, 0]);
   const smax = d3max(sizes) ?? 1;
-  const rScale = scaleLinear().domain([0, smax || 1]).range([4, 20]);
 
   const xd = x.domain();
   const yd = y.domain();
@@ -113,34 +121,22 @@ function renderScatter(ctx: ExtraContext): ReactNode {
 
   return (
     <g transform={`translate(${m.left},${m.top})`}>
-      {y.ticks(5).map((t, i) => (
-        <g key={`y${i}`}>
-          {spec.style.showGrid && <line x1={0} x2={iw} y1={y(t)} y2={y(t)} stroke={gridColor} />}
-          {!compact && <text x={-8} y={y(t) + 3.5} textAnchor="end" fontSize={11} fill={labelColor} fontFamily={labelFont}>{fmt(t)}</text>}
-        </g>
-      ))}
+      {!compact &&
+        y.ticks(5).map((t, i) => (
+          <text key={`y${i}`} x={-8} y={y(t) + 3.5} textAnchor="end" fontSize={11} fill={labelColor} fontFamily={labelFont}>{fmt(t)}</text>
+        ))}
       {!compact && x.ticks(5).map((t, i) => (
         <text key={`x${i}`} x={x(t)} y={ih + 16} textAnchor="middle" fontSize={11} fill={labelColor} fontFamily={labelFont}>{fmt(t)}</text>
       ))}
-      {!compact && <line x1={0} x2={iw} y1={ih} y2={ih} stroke={labelColor} />}
-      {!compact && <line x1={0} x2={0} y1={0} y2={ih} stroke={labelColor} />}
+      {!compact && <line x1={0} x2={iw} y1={ih} y2={ih} stroke={labelColor} strokeOpacity={0.5} />}
+      {!compact && <line x1={0} x2={0} y1={0} y2={ih} stroke={labelColor} strokeOpacity={0.5} />}
       {xs.map((xv, i) => {
         const cx = x(xv);
         const cy = y(ys[i]);
-        const r = isBubble ? rScale(sizes[i]) : 4.5;
-        const dot = (
-          <circle
-            key={i}
-            cx={cx}
-            cy={cy}
-            r={r}
-            fill={color}
-            fillOpacity={isBubble ? 0.5 : 0.85}
-            stroke={color}
-            strokeWidth={isBubble ? 1 : 0}
-          />
-        );
-        if (!pointDrag || !yKey) return dot;
+        const r = isBubble ? (3 + (sizes[i] / (smax || 1)) * 8) * s : 4.2 * s;
+        const ci = isBubble ? i : 0;
+        const dot = paintPoint(cx, cy, r, palette, ci, T, s, idp, bg, { pointerEvents: "none" });
+        if (!pointDrag || !yKey) return <g key={i}>{dot}</g>;
         const props = pointDrag(
           i,
           xEditable ? { key: spec.encoding.x as string, startValue: xv, unitsPerPx: unitsPerPxX } : null,
@@ -148,18 +144,8 @@ function renderScatter(ctx: ExtraContext): ReactNode {
         );
         return (
           <g key={i}>
-            {/* larger transparent hit target so small points are easy to grab */}
-            <circle cx={cx} cy={cy} r={Math.max(r + 6, 12)} fill="transparent" {...props} />
-            <circle
-              cx={cx}
-              cy={cy}
-              r={r}
-              fill={color}
-              fillOpacity={isBubble ? 0.5 : 0.85}
-              stroke={color}
-              strokeWidth={isBubble ? 1 : 0}
-              pointerEvents="none"
-            />
+            <circle cx={cx} cy={cy} r={Math.max(r + 6, 12 * s)} fill="transparent" {...props} />
+            {dot}
           </g>
         );
       })}

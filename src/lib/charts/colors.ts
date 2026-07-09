@@ -43,13 +43,12 @@ export function colorSlots(spec: ChartSpec, data: DataTable): string[] {
  * uniform by default (every bar uses the first palette color); all other kinds
  * cycle through the palette per slot.
  */
+/**
+ * The default (pre-override) color for slot `i`. In the treatment system every
+ * bar/wedge/point/series cycles through the palette by index.
+ */
 function defaultColorAt(spec: ChartSpec, i: number): string {
   const base = basePalette(spec);
-  if (spec.kind === "bar" || spec.kind === "barHorizontal") {
-    if (spec.style.multi) return base[i % base.length];
-    if (spec.style.duo) return base[(i % 2) % base.length];
-    return base[0];
-  }
   return base[i % base.length];
 }
 
