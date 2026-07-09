@@ -321,18 +321,3 @@ export function treatmentCardBg(T: TreatmentKey): string {
   const c = TREATMENTS[T].chrome;
   return c.cardSolid ?? c.card;
 }
-
-/**
- * Confetti Pop's two decorative dots (accent, white-bordered) pinned at the
- * top-right and bottom-left corners of the chart card. Drawn in the SVG so they
- * appear in the editor, swatches, and exports uniformly.
- */
-export function confettiDots(width: number, height: number, accent: string, s: number): ReactNode {
-  const inset = 8 * s;
-  return (
-    <g pointerEvents="none">
-      <circle cx={width - inset} cy={inset} r={7 * s} fill={accent} stroke="#ffffff" strokeWidth={1.6 * s} />
-      <circle cx={inset} cy={height - inset} r={4.5 * s} fill={accent} stroke="#ffffff" strokeWidth={1.6 * s} />
-    </g>
-  );
-}

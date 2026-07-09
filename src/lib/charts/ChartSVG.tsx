@@ -9,7 +9,7 @@ import { arc as d3arc, area as d3area, curveCatmullRom, curveLinear, line as d3l
 import { categories, seriesList } from "@/lib/charts/access";
 import { effectiveColor, resolvedPalette } from "@/lib/charts/colors";
 import { dragToValue, snapToHalf } from "@/lib/charts/interact";
-import { barRadius, confettiDots, paintArea, paintFilledMark, paintLine, paintPoint, treatmentDefs, type ShapeFn } from "@/lib/charts/paint";
+import { barRadius, paintArea, paintFilledMark, paintLine, paintPoint, treatmentDefs, type ShapeFn } from "@/lib/charts/paint";
 import { EXTRA_KINDS, renderExtra } from "@/lib/charts/renderExtra";
 import { cardBg, TREATMENTS, treatmentOf } from "@/lib/charts/styles";
 import { FONT, fmt } from "@/lib/charts/theme";
@@ -285,7 +285,6 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
       {transparent ? null : <rect width={width} height={height} fill={bgColor} />}
     </>
   );
-  const decoEls = T === "confetti" ? confettiDots(width, height, palette[0], s) : null;
 
   const title = showTitle ? (
     <text x={16} y={22} fontSize={15} fontWeight={600} fill={titleColor} fontFamily={labelFont}>
@@ -357,7 +356,6 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
             ))}
           </g>
         )}
-        {decoEls}
         {badgeEl}
       </svg>
     );
@@ -371,7 +369,6 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
         {title}
         {(kind === "radar" || kind === "combo") && showLegend ? legendEl : null}
         {renderExtra({ spec, data, width, height, header, palette, labelColor, bg, treatment: T, s, idp, pointDrag: pointEditable ? pointDragProps : undefined })}
-        {decoEls}
         {badgeEl}
       </svg>
     );
@@ -386,7 +383,6 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
         <text x={width / 2} y={height / 2} textAnchor="middle" fontSize={13} fill={labelColor} fontFamily={labelFont}>
           A “{kind}” renderer is coming in a later phase.
         </text>
-        {decoEls}
         {badgeEl}
       </svg>
     );
@@ -608,7 +604,6 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
         {axisEls}
         {markEls}
       </g>
-      {decoEls}
         {badgeEl}
     </svg>
   );
