@@ -7,7 +7,7 @@ import Link from "next/link";
 import Masthead from "@/components/Masthead";
 import ChartSVG from "@/lib/charts/ChartSVG";
 import { getVersion } from "@/lib/id";
-import { exportDeckToPptx, MissingSourceError, type DeckChartExport } from "@/lib/pptx/exportPptx";
+import { exportDeckToPptx, MissingSourceError, slideRenderSize, type DeckChartExport } from "@/lib/pptx/exportPptx";
 import { typeDisplayName } from "@/lib/plott/mapping";
 import { getDocument } from "@/lib/store/db";
 import { getDeck, type Deck } from "@/lib/store/deck";
@@ -159,10 +159,12 @@ export default function DeckView() {
         </div>
       </div>
 
-      {/* Offscreen export renders (full-size, for rasterizing on deck export). */}
-      <div aria-hidden style={{ position: "absolute", left: -99999, top: 0, width: 760, height: 460, pointerEvents: "none" }}>
+      {/* Offscreen export renders, each at its slide rectangle's aspect ratio so
+          the placed image isn't stretched. */}
+      <div aria-hidden style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }}>
         {charts.map((doc) => {
           const v = getVersion(doc);
+          const size = doc.origin ? slideRenderSize(doc.origin.rect) : { width: 760, height: 460 };
           return (
             <ChartSVG
               key={`x-${doc.id}`}
@@ -171,8 +173,8 @@ export default function DeckView() {
               }}
               spec={v.spec}
               data={v.data}
-              width={760}
-              height={460}
+              width={size.width}
+              height={size.height}
               transparent={!!v.spec.style.transparentBackground}
               showTitle
             />

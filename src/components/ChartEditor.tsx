@@ -14,7 +14,7 @@ import { CHART_CATALOG, CHART_GROUP_LABELS, type ChartGroup } from "@/lib/charts
 import { sampleFor } from "@/lib/charts/sample";
 import { cardStyle, pageStyle, PALETTES, TREATMENTS, isPaletteKey, treatmentOf } from "@/lib/charts/styles";
 import { exportPng, exportSvg } from "@/lib/export/svg";
-import { exportChartToPptx, MissingSourceError } from "@/lib/pptx/exportPptx";
+import { exportChartToPptx, MissingSourceError, slideRenderSize } from "@/lib/pptx/exportPptx";
 import { addPreview, commitVersion, createDocument, getVersion, newChartId, nowIso } from "@/lib/id";
 import { dhashFromSvg } from "@/lib/phash";
 import { CORE_KINDS, PLOTT_TYPES, typeDisplayName } from "@/lib/plott/mapping";
@@ -170,6 +170,7 @@ export default function ChartEditor({
   const showBadge = !!spec.style.showIdBadge;
   const badge = showBadge ? `${doc.id} · v${exportVersion}` : undefined;
   const transparent = !!spec.style.transparentBackground;
+  const exportSize = doc.origin ? slideRenderSize(doc.origin.rect) : { width: 760, height: 460 };
   const treatment = treatmentOf(spec.style);
   const chrome = TREATMENTS[treatment].chrome;
 
@@ -565,9 +566,10 @@ export default function ChartEditor({
         </div>
       </div>
 
-      {/* hidden titled chart used for image/SVG export */}
-      <div aria-hidden style={{ position: "absolute", left: -99999, top: 0, width: 760, height: 460 }}>
-        <ChartSVG ref={exportRef} spec={spec} data={data} width={760} height={460} idBadge={badge} transparent={transparent} showTitle />
+      {/* hidden titled chart used for image/SVG export. For an imported chart it
+          matches the slide rectangle's aspect so the placed image isn't stretched. */}
+      <div aria-hidden style={{ position: "absolute", left: -99999, top: 0, width: exportSize.width, height: exportSize.height }}>
+        <ChartSVG ref={exportRef} spec={spec} data={data} width={exportSize.width} height={exportSize.height} idBadge={badge} transparent={transparent} showTitle />
       </div>
 
       {lightbox && (

@@ -39,6 +39,17 @@ export class MissingSourceError extends Error {
 }
 
 /**
+ * Pixel size to render a chart for placement so its aspect ratio matches the
+ * target slide rectangle — otherwise PowerPoint stretches the image and it
+ * looks crunched. Returns a ~960px-wide box at the rectangle's aspect.
+ */
+export function slideRenderSize(rect: { cx: number; cy: number }): { width: number; height: number } {
+  const aspect = rect.cx > 0 ? rect.cy / rect.cx : 0.5;
+  const width = 960;
+  return { width, height: Math.min(1600, Math.max(160, Math.round(width * aspect))) };
+}
+
+/**
  * Place the current chart's image onto its originating slide and download the
  * resulting `.pptx`. Throws `MissingSourceError` if the source bytes are gone
  * (e.g. the doc was opened in a different browser).
