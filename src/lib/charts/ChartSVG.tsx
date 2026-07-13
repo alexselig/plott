@@ -344,9 +344,12 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
             const shape: ShapeFn = (attrs, key) => <path key={key} d={d} {...attrs} />;
             return <g key={i}>{paintFilledMark(shape, palette, i, T, s, idp)}</g>;
           })}
-          {wedgePaths.map((d, i) => (
-            <path key={`sep-${i}`} d={d} fill="none" stroke={bg} strokeWidth={sepW} strokeLinejoin="round" />
-          ))}
+          {/* Constant-width gaps between filled wedges. Skipped for outline-only
+              treatments (blueprint), where the separator would erase the outlines. */}
+          {T !== "blueprint" &&
+            wedgePaths.map((d, i) => (
+              <path key={`sep-${i}`} d={d} fill="none" stroke={bg} strokeWidth={sepW} strokeLinejoin="round" />
+            ))}
         </g>
         {!compact && (
           <g transform={`translate(${width - legendW},${header + 4})`}>
