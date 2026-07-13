@@ -92,6 +92,14 @@ the long tail follows in P5.
 - **Presentation placeholder** (P6): composite the exported chart onto a
   user-provided screenshot with a defined placeholder region, to preview the
   chart in context. (Screenshot to be provided.)
+- **PowerPoint round-trip** (P9): import a `.pptx`, pull each native chart's data
+  + exact on-slide rectangle, rebuild in Plott, then place the exported image
+  back onto the slide as a picture over the original chart — downloaded as a new
+  `.pptx`. The picture carries the Plott ID/version/timestamp (alt-text) + a
+  hyperlink to the live editor, and is re-detected on re-import. Client-side via
+  `fflate` (zip) + `fast-xml-parser` (parse) + string-templated XML (write);
+  embedded-workbook (`ppt/embeddings/*.xlsx`) fallback via SheetJS when a chart
+  has no cached values. See `src/lib/pptx/`.
 
 ## 7. AI layer (optional)
 
@@ -136,6 +144,11 @@ src/
   against the local library: PNG metadata → filename → **perceptual-hash
   (dHash) match** for re-encoded/pasted images → manual code entry.
   ⏳ *Deferred:* cross-device (cloud) resolution.
+- ✅ **P9** PowerPoint round-trip: import `.pptx` → extract chart data + geometry
+  → rebuild → place image overlay back onto the slide (`src/lib/pptx/`), with an
+  embedded editor hyperlink + alt-text ID and overlay re-detection on re-import.
+  ⏳ *Deferred:* `chartEx` (waterfall/funnel/treemap) rebuild; charts nested in
+  grouped shapes.
 
 ## Testing
 

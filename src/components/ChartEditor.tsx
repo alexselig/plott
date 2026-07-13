@@ -13,11 +13,12 @@ import { CHART_CATALOG, CHART_GROUP_LABELS, type ChartGroup } from "@/lib/charts
 import { sampleFor } from "@/lib/charts/sample";
 import { cardStyle, pageStyle, PALETTES, TREATMENTS, isPaletteKey, treatmentOf } from "@/lib/charts/styles";
 import { exportPng, exportSvg } from "@/lib/export/svg";
+import { exportChartToPptx, MissingSourceError } from "@/lib/pptx/exportPptx";
 import { addPreview, commitVersion, createDocument, getVersion, newChartId, nowIso } from "@/lib/id";
 import { dhashFromSvg } from "@/lib/phash";
 import { CORE_KINDS, PLOTT_TYPES, typeDisplayName } from "@/lib/plott/mapping";
 import { getDocument, saveDocument } from "@/lib/store/db";
-import type { ChartDocument, ChartKind, ChartSpec, DataTable } from "@/lib/types";
+import type { ChartDocument, ChartKind, ChartSpec, DataTable, PptxOrigin } from "@/lib/types";
 
 const NEW_ID = "PLT-NEW";
 const EPOCH = "1970-01-01T00:00:00.000Z";
@@ -64,6 +65,7 @@ export default function ChartEditor({
   const [showMenu, setShowMenu] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pptxError, setPptxError] = useState<string | null>(null);
   const exportRef = useRef<SVGSVGElement>(null);
 
   // Mint a real id on the client for brand-new charts (SSR uses a placeholder).
@@ -90,8 +92,9 @@ export default function ChartEditor({
     const raw = window.sessionStorage.getItem("chartforge:pending");
     if (!raw) return;
     try {
-      const pending = JSON.parse(raw) as { spec: ChartSpec; data: DataTable; title?: string };
-      const next = createDocument(structuredClone(pending.spec), structuredClone(pending.data), pending.title);
+      const pending = JSON.parse(raw) as { spec: ChartSpec; data: DataTable; title?: string; origin?: PptxOrigin };
+      const base = createDocument(structuredClone(pending.spec), structuredClone(pending.data), pending.title);
+      const next = pending.origin ? { ...base, origin: pending.origin } : base;
       /* eslint-disable react-hooks/set-state-in-effect -- seeding from client sessionStorage */
       setDoc(chartId === "new" ? next : { ...next, id: chartId });
       setSpec(structuredClone(pending.spec));
@@ -199,6 +202,25 @@ export default function ChartEditor({
     setShowMenu(false);
   }
 
+  async function onPptx() {
+    if (!exportRef.current || !doc.origin) return;
+    setBusy(true);
+    setPptxError(null);
+    try {
+      const target = dirty ? commit() : doc;
+      await exportChartToPptx(exportRef.current, target, transparent);
+      await persistPreview(target);
+    } catch (err) {
+      setPptxError(
+        err instanceof MissingSourceError
+          ? "The original PowerPoint file isn't in this browser — re-import it to place the image."
+          : "Couldn't build the PowerPoint file.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const extra = CHART_CATALOG.filter((c) => !CORE_KINDS.includes(c.kind));
 
   return (
@@ -226,11 +248,26 @@ export default function ChartEditor({
           >
             ◻ Preview on slide
           </button>
+          {doc.origin && (
+            <button
+              type="button"
+              onClick={onPptx}
+              disabled={busy}
+              title={`Place this chart onto slide ${doc.origin.slideIndex + 1} of ${doc.origin.fileName}`}
+              className="rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {busy ? "Placing…" : "Export to PowerPoint"}
+            </button>
+          )}
           <button
             type="button"
             onClick={onPng}
             disabled={busy}
-            className="rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+            className={
+              doc.origin
+                ? "rounded-md border border-border bg-panel px-4 py-2.5 text-[13px] font-medium text-ink hover:border-accent disabled:opacity-50"
+                : "rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+            }
           >
             {busy ? "Exporting…" : "Export PNG"}
           </button>
@@ -298,6 +335,12 @@ export default function ChartEditor({
           )}
         </div>
       </header>
+
+      {pptxError && (
+        <div className="flex-none border-b border-accent/40 bg-accent/10 px-[26px] py-2 text-[12px] text-accent">
+          {pptxError}
+        </div>
+      )}
 
       {/* body */}
       <div className="flex min-h-0 flex-1">
@@ -420,7 +463,7 @@ export default function ChartEditor({
       </div>
 
       {lightbox && (
-        <PlottLightbox spec={spec} data={data} deck={doc.deck} onClose={() => setLightbox(false)} />
+        <PlottLightbox spec={spec} data={data} deck={doc.deck} origin={doc.origin} onClose={() => setLightbox(false)} />
       )}
     </div>
   );

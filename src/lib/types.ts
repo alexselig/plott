@@ -180,6 +180,43 @@ export interface ChartDocument {
   /** Perceptual (dHash) fingerprints of exported images, per version, for
    *  copy/paste-robust re-open matching. */
   previews?: { version: number; hash: string }[];
+  /** Set when the chart was imported from a PowerPoint file, so the editor can
+   *  place its image back onto the originating slide. */
+  origin?: PptxOrigin;
+}
+
+/* ------------------------------------------------------------------ */
+/* PowerPoint round-trip geometry + provenance                         */
+/* ------------------------------------------------------------------ */
+
+/** A shape rectangle in EMU (English Metric Units, 914400 per inch). */
+export interface EmuRect {
+  x: number;
+  y: number;
+  cx: number;
+  cy: number;
+}
+
+/** Slide dimensions in EMU. */
+export interface SlideSize {
+  cx: number;
+  cy: number;
+}
+
+/**
+ * Everything needed to place a Plott image back onto the slide it came from.
+ * The source `.pptx` bytes live separately in IndexedDB, keyed by `sourceToken`,
+ * so this stays JSON-serializable inside a ChartDocument.
+ */
+export interface PptxOrigin {
+  fileName: string;
+  /** IndexedDB key for the stored source `.pptx` bytes. */
+  sourceToken: string;
+  slideIndex: number;
+  slidePath: string;
+  graphicFrameId: number;
+  rect: EmuRect;
+  slideSize: SlideSize;
 }
 
 /**

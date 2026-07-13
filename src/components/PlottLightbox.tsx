@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import ChartSVG from "@/lib/charts/ChartSVG";
-import type { ChartSpec, DataTable } from "@/lib/types";
+import { rectToRegion } from "@/lib/pptx/emu";
+import type { ChartSpec, DataTable, PptxOrigin } from "@/lib/types";
 
 interface Region {
   left: number;
@@ -97,11 +98,13 @@ export default function PlottLightbox({
   spec,
   data,
   deck,
+  origin,
   onClose,
 }: {
   spec: ChartSpec;
   data: DataTable;
   deck?: string;
+  origin?: PptxOrigin;
   onClose: () => void;
 }) {
   const [state, setState] = useState<SlideState>(loadState);
@@ -110,17 +113,38 @@ export default function PlottLightbox({
   const dragRef = useRef<DragStart | null>(null);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time client hydrate from localStorage
-    setState(loadState());
-  }, []);
+    // For a PowerPoint-imported chart, show its real slide proportions with the
+    // chart at the exact rectangle it occupies on the slide. Otherwise restore
+    // the last-used slide/region from localStorage.
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time client hydrate */
+    if (origin) {
+      setState({
+        image: null,
+        w: origin.slideSize.cx || DEFAULT.w,
+        h: origin.slideSize.cy || DEFAULT.h,
+        region: rectToRegion(origin.rect, origin.slideSize),
+      });
+    } else {
+      setState(loadState());
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [origin]);
 
   const { region } = state;
   const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-  const imgSrc = state.image ?? `${basePath}/placeholders/presentation.png`;
+  // Imported charts show a neutral slide (it isn't the user's actual deck render),
+  // so the exact size/position reads clearly; other charts use the bundled shot.
+  const imgSrc = state.image ?? (origin ? null : `${basePath}/placeholders/presentation.png`);
   const aspect = (region.height * state.h) / (region.width * state.w);
   const svgW = 900;
   const svgH = Math.max(80, Math.round(svgW * aspect));
-  const caption = (deck ? `On slide 4 of "${deck}"` : "Preview on slide").toUpperCase();
+  const caption = (
+    origin
+      ? `Placement on slide ${origin.slideIndex + 1} of "${origin.fileName}"`
+      : deck
+        ? `On slide 4 of "${deck}"`
+        : "Preview on slide"
+  ).toUpperCase();
 
   function beginDrag(e: React.PointerEvent, mode: DragMode) {
     e.preventDefault();
@@ -225,8 +249,12 @@ export default function PlottLightbox({
             boxShadow: "0 40px 90px -30px rgba(0,0,0,.6)",
           }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element -- decorative slide background */}
-          <img src={imgSrc} alt="Presentation slide" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
+          {imgSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element -- decorative slide background
+            <img src={imgSrc} alt="Presentation slide" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
+          ) : (
+            <div className="pointer-events-none absolute inset-0 h-full w-full bg-white" />
+          )}
           <div
             data-testid="slide-region"
             onPointerDown={(e) => beginDrag(e, "move")}

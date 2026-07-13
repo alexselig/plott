@@ -28,7 +28,7 @@ export default function StartPage() {
         <p className="m-0 mb-11 text-[15px] text-muted">
           Two ways in — pick your shape, or bring the numbers.
         </p>
-        <div className="grid w-full max-w-[760px] grid-cols-1 gap-6 sm:grid-cols-2">
+        <div className="grid w-full max-w-[1080px] grid-cols-1 gap-6 sm:grid-cols-3">
           <Link
             href="/new"
             className="flex flex-col gap-4 rounded-xl border border-rule bg-panel p-7 text-left transition-colors hover:border-accent"
@@ -54,6 +54,19 @@ export default function StartPage() {
               Paste or type your numbers and Plott recommends the best chart — you can always switch.
             </div>
             <div className="plott-mono mt-0.5 text-[11px] text-accent">Add data →</div>
+          </Link>
+          <Link
+            href="/import"
+            className="flex flex-col gap-4 rounded-xl border border-rule bg-panel p-7 text-left transition-colors hover:border-accent"
+          >
+            <div className="flex h-[88px] items-center justify-center">
+              <ChartGlyph shape="bar" size="120px" />
+            </div>
+            <div className="plott-serif text-[26px]">Start from PowerPoint</div>
+            <div className="text-[13.5px] leading-relaxed text-muted">
+              Import a .pptx, pull a chart’s data, rebuild it, and drop the image back onto the same slide.
+            </div>
+            <div className="plott-mono mt-0.5 text-[11px] text-accent">Import .pptx →</div>
           </Link>
         </div>
       </div>

@@ -2,7 +2,14 @@
   "name": "plott",
   "version": "0.1.0",
   "description": "Build presentation-ready charts from your data — 19 chart types, direct-manipulation editing, and versioned image export.",
-  "keywords": ["nextjs", "react", "charts", "data-visualization", "dataviz", "charting"],
+  "keywords": [
+    "nextjs",
+    "react",
+    "charts",
+    "data-visualization",
+    "dataviz",
+    "charting"
+  ],
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -16,6 +23,8 @@
     "d3-array": "^3.2.4",
     "d3-scale": "^4.0.2",
     "d3-shape": "^3.2.0",
+    "fast-xml-parser": "^5.10.0",
+    "fflate": "^0.8.3",
     "idb": "^8.0.3",
     "nanoid": "^5.1.16",
     "next": "16.2.10",
