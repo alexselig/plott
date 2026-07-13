@@ -6,6 +6,8 @@ import ChartSVG from "@/lib/charts/ChartSVG";
 import { rectToRegion } from "@/lib/pptx/emu";
 import { getSource } from "@/lib/store/pptxSource";
 import { readSlidePreview, type SlidePreview } from "@/lib/pptx/slidePreview";
+import { isGraphConfigured } from "@/lib/msgraph/config";
+import { getCachedSlide, renderNativeSlide } from "@/lib/msgraph/renderSlide";
 import type { ChartSpec, DataTable, PptxOrigin } from "@/lib/types";
 
 interface Region {
@@ -112,6 +114,8 @@ export default function PlottLightbox({
   const [state, setState] = useState<SlideState>(loadState);
   const [dragging, setDragging] = useState(false);
   const [slide, setSlide] = useState<SlidePreview | null>(null);
+  const [renderStatus, setRenderStatus] = useState<string | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragStart | null>(null);
 
@@ -157,6 +161,52 @@ export default function PlottLightbox({
     };
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [origin]);
+
+  // If we've previously rendered this slide natively (Microsoft 365 → PDF), reuse
+  // the cached image instantly so the preview opens on the real slide.
+  useEffect(() => {
+    if (!origin || !isGraphConfigured()) return;
+    let cancelled = false;
+    getCachedSlide(origin.sourceToken, origin.slideIndex)
+      .then((cached) => {
+        if (cancelled || !cached) return;
+        setState((s) => ({ ...s, image: cached.url, w: cached.w, h: cached.h }));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [origin]);
+
+  async function renderNative() {
+    if (!origin || renderStatus) return;
+    setRenderError(null);
+    try {
+      const bytes = await getSource(origin.sourceToken);
+      if (!bytes) {
+        setRenderError("The original PowerPoint file isn't available in this browser.");
+        return;
+      }
+      const native = await renderNativeSlide(
+        origin.sourceToken,
+        bytes,
+        origin.fileName,
+        origin.slideIndex,
+        setRenderStatus,
+      );
+      setState((s) => ({
+        ...s,
+        image: native.url,
+        w: native.w,
+        h: native.h,
+        region: rectToRegion(origin.rect, origin.slideSize),
+      }));
+    } catch (e) {
+      setRenderError(e instanceof Error ? e.message : "Couldn't render the slide.");
+    } finally {
+      setRenderStatus(null);
+    }
+  }
 
   const { region } = state;
   const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
@@ -253,7 +303,18 @@ export default function PlottLightbox({
       <div className="plott-mono mb-3 text-[11px] uppercase tracking-[0.16em] text-[#e0d8c8]">{caption}</div>
 
       <div onClick={(e) => e.stopPropagation()} className="flex flex-col items-center">
-        <div className="mb-2.5 flex items-center gap-3">
+        <div className="mb-2.5 flex flex-wrap items-center justify-center gap-3">
+          {origin && isGraphConfigured() && (
+            <button
+              type="button"
+              onClick={renderNative}
+              disabled={!!renderStatus}
+              title="Convert this deck to PDF via your own Microsoft 365 (OneDrive) and show the real, pixel-accurate slide. The deck is uploaded to your OneDrive and the temporary copy is deleted afterwards."
+              className="plott-mono rounded-md bg-accent px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-accent-hover disabled:opacity-60"
+            >
+              {renderStatus ? renderStatus : state.image ? "Re-render real slide" : "⧉ Render real slide (Microsoft 365)"}
+            </button>
+          )}
           <label className="plott-mono cursor-pointer rounded-md bg-paper px-3 py-1.5 text-[11px] font-medium text-ink hover:bg-white">
             Upload slide
             <input type="file" accept="image/*" onChange={onUpload} className="hidden" />
@@ -267,6 +328,11 @@ export default function PlottLightbox({
           </button>
           <span className="plott-mono text-[10px] text-[#a49a88]">drag chart to reposition · drag corner to resize</span>
         </div>
+        {renderError && (
+          <div className="plott-mono mb-2.5 max-w-[560px] rounded-md bg-[#3a2420] px-3 py-1.5 text-center text-[10px] text-[#f3c9c2]">
+            {renderError}
+          </div>
+        )}
 
         <div
           ref={frameRef}
@@ -277,7 +343,7 @@ export default function PlottLightbox({
             boxShadow: "0 40px 90px -30px rgba(0,0,0,.6)",
           }}
         >
-          {origin && slide ? (
+          {!state.image && origin && slide ? (
             (() => {
               // Render into a normalized ~1280px space (not raw EMU) so HTML font
               // sizes stay small enough that browsers don't clamp them.

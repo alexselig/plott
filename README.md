@@ -28,6 +28,32 @@ Start → **Start from PowerPoint** (`/import`) lets you:
 Re-importing a deck also detects previously-placed Plott overlays (by their
 alt-text) and offers to reopen them.
 
+### Native slide preview (Microsoft 365, optional)
+
+"Preview on slide" reconstructs the target slide client-side so you can position
+the chart in context. For a **pixel-accurate** view, enable the Microsoft 365
+path: it converts the imported deck to PDF via the signed-in user's **own
+OneDrive** (Office's own renderer) and rasterizes the exact slide with `pdf.js`,
+then deletes the temporary upload. Rendered slides are cached per source+slide in
+IndexedDB, so re-opening is instant.
+
+It's **off unless configured** (the app falls back to the reconstruction). To
+enable it:
+
+1. Register an **Azure AD app** → Authentication → add a **Single-page
+   application** platform with redirect URIs for each origin you serve from
+   (e.g. `https://vibehub.microsoft.com/app/alexselig-cgfhpm/` and your local
+   dev URL such as `http://localhost:3000/`).
+2. API permissions → Microsoft Graph → **delegated** `Files.ReadWrite` (and
+   `User.Read`); grant consent.
+3. Set `NEXT_PUBLIC_MSAL_CLIENT_ID` (and optionally `NEXT_PUBLIC_MSAL_AUTHORITY`)
+   at build time — see `.env.example`. The client id is a public SPA identifier,
+   not a secret.
+
+> The deck is uploaded to the **user's own** OneDrive (first-party, same tenant)
+> only for the conversion, then the temp copy is deleted. Hidden slides may shift
+> PDF page numbers; the page is clamped to the document.
+
 Notes:
 - Data is read from the chart's cached values (always written by PowerPoint). If a
   chart has no cache, the embedded workbook (`ppt/embeddings/*.xlsx`) is parsed as
@@ -59,6 +85,15 @@ single static page serves any chart.
 ```bash
 # Redeploy a new version (needs ~/.env.vibehub with VIBEHUB_API_KEY):
 bash scripts/deploy-vibehub.sh "/app/alexselig-cgfhpm" "projectId=alexselig-cgfhpm" "slug=plott"
+```
+
+To bake the optional Microsoft 365 native-slide-preview into the deploy, pass the
+SPA client id at build time (it's `NEXT_PUBLIC_`, so it's inlined into the static
+bundle):
+
+```bash
+NEXT_PUBLIC_MSAL_CLIENT_ID=<your-spa-client-id> \
+  bash scripts/deploy-vibehub.sh "/app/alexselig-cgfhpm" "projectId=alexselig-cgfhpm" "slug=plott"
 ```
 
 > On the static host, "Ask AI" shows *not configured* (it needs the server
