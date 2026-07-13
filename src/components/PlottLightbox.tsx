@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 
 import ChartSVG from "@/lib/charts/ChartSVG";
 import { rectToRegion } from "@/lib/pptx/emu";
+import { getSource } from "@/lib/store/pptxSource";
+import { readSlidePreview, type SlidePreview } from "@/lib/pptx/slidePreview";
 import type { ChartSpec, DataTable, PptxOrigin } from "@/lib/types";
 
 interface Region {
@@ -109,6 +111,7 @@ export default function PlottLightbox({
 }) {
   const [state, setState] = useState<SlideState>(loadState);
   const [dragging, setDragging] = useState(false);
+  const [slide, setSlide] = useState<SlidePreview | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragStart | null>(null);
 
@@ -127,6 +130,31 @@ export default function PlottLightbox({
     } else {
       setState(loadState());
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [origin]);
+
+  // Load a reconstruction of the actual slide (title, body, images) so the chart
+  // previews in the real slide context it will be placed into.
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- async slide-preview load */
+    if (!origin) {
+      setSlide(null);
+      return;
+    }
+    let cancelled = false;
+    getSource(origin.sourceToken)
+      .then((bytes) => {
+        if (cancelled || !bytes) return;
+        try {
+          setSlide(readSlidePreview(bytes, origin.slidePath));
+        } catch {
+          /* fall back to a blank slide */
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [origin]);
 
@@ -249,7 +277,72 @@ export default function PlottLightbox({
             boxShadow: "0 40px 90px -30px rgba(0,0,0,.6)",
           }}
         >
-          {imgSrc ? (
+          {origin && slide ? (
+            (() => {
+              // Render into a normalized ~1280px space (not raw EMU) so HTML font
+              // sizes stay small enough that browsers don't clamp them.
+              const PW = 1280;
+              const K = PW / (state.w || 1);
+              const PH = Math.round((state.h || 1) * K);
+              return (
+                <svg viewBox={`0 0 ${PW} ${PH}`} preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full">
+                  <rect width={PW} height={PH} fill={slide.bg} />
+                  {slide.shapes.map((sh, i) => {
+                    if (sh.kind === "image") {
+                      return (
+                        <image
+                          key={i}
+                          href={sh.href}
+                          x={sh.rect.x * K}
+                          y={sh.rect.y * K}
+                          width={sh.rect.cx * K}
+                          height={sh.rect.cy * K}
+                          preserveAspectRatio="xMidYMid meet"
+                        />
+                      );
+                    }
+                    const justify = sh.anchor === "ctr" ? "center" : sh.anchor === "b" ? "flex-end" : "flex-start";
+                    return (
+                      <foreignObject key={i} x={sh.rect.x * K} y={sh.rect.y * K} width={sh.rect.cx * K} height={sh.rect.cy * K}>
+                        <div
+                          // @ts-expect-error -- xmlns is required for HTML inside SVG foreignObject to paint
+                          xmlns="http://www.w3.org/1999/xhtml"
+                          style={{ display: "flex", flexDirection: "column", justifyContent: justify, height: "100%", overflow: "hidden" }}
+                        >
+                          {sh.paragraphs.map((p, pi) => (
+                            <div
+                              key={pi}
+                              style={{
+                                textAlign: p.align === "ctr" ? "center" : p.align === "r" ? "right" : "left",
+                                lineHeight: 1.2,
+                                margin: 0,
+                              }}
+                            >
+                              {p.bullet && <span style={{ marginRight: 5 }}>•</span>}
+                              {p.runs.map((r, ri) => (
+                                <span
+                                  key={ri}
+                                  style={{
+                                    fontSize: (r.sizePt ?? 18) * 12700 * K,
+                                    fontWeight: r.bold ? 700 : 400,
+                                    fontStyle: r.italic ? "italic" : "normal",
+                                    color: r.color ?? "#333333",
+                                    fontFamily: "Arial, sans-serif",
+                                  }}
+                                >
+                                  {r.text}
+                                </span>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      </foreignObject>
+                    );
+                  })}
+                </svg>
+              );
+            })()
+          ) : imgSrc ? (
             // eslint-disable-next-line @next/next/no-img-element -- decorative slide background
             <img src={imgSrc} alt="Presentation slide" className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
           ) : (

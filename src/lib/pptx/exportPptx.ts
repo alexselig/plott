@@ -39,14 +39,18 @@ export class MissingSourceError extends Error {
 }
 
 /**
- * Pixel size to render a chart for placement so its aspect ratio matches the
- * target slide rectangle — otherwise PowerPoint stretches the image and it
- * looks crunched. Returns a ~960px-wide box at the rectangle's aspect.
+ * Logical size to render a chart for slide placement. Width is kept close to the
+ * editor's on-screen canvas so the fixed-size fonts stay proportional (matching
+ * what the user sees while editing); height follows the target rectangle's aspect
+ * so the placed image isn't stretched. The PNG is rasterized at high DPI
+ * (`PPTX_EXPORT_SCALE`) for a crisp result on the slide.
  */
+export const PPTX_EXPORT_SCALE = 3;
+
 export function slideRenderSize(rect: { cx: number; cy: number }): { width: number; height: number } {
   const aspect = rect.cx > 0 ? rect.cy / rect.cx : 0.5;
-  const width = 960;
-  return { width, height: Math.min(1600, Math.max(160, Math.round(width * aspect))) };
+  const width = 600; // ≈ the editor canvas width, where the fonts look right
+  return { width, height: Math.min(1400, Math.max(150, Math.round(width * aspect))) };
 }
 
 /**
@@ -65,7 +69,7 @@ export async function exportChartToPptx(
   const source = await getSource(origin.sourceToken);
   if (!source) throw new MissingSourceError();
 
-  const png = await svgToPngBytes(svg, 2, transparent);
+  const png = await svgToPngBytes(svg, PPTX_EXPORT_SCALE, transparent);
   const stamp = stampFor(doc);
   const out = placeOverlay(source, origin, png, {
     stamp: { id: stamp.chartId, version: stamp.version, ts: stamp.timestamp },
@@ -94,7 +98,7 @@ export async function exportDeckToPptx(
   for (const { doc, svg } of charts) {
     if (!doc.origin || !svg) continue;
     const transparent = !!getVersion(doc).spec.style.transparentBackground;
-    const png = await svgToPngBytes(svg, 2, transparent);
+    const png = await svgToPngBytes(svg, PPTX_EXPORT_SCALE, transparent);
     const stamp = stampFor(doc);
     placements.push({
       origin: doc.origin,
