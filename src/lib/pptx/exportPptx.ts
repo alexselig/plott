@@ -6,6 +6,7 @@
 import { EDITOR_PUBLIC_URL } from "@/lib/constants";
 import { svgToPngBytes } from "@/lib/export/svg";
 import { getVersion, stampFor } from "@/lib/id";
+import { EMU_PER_INCH } from "@/lib/pptx/emu";
 import { placeOverlay, placeOverlays, type OverlayPlacement } from "@/lib/pptx/write";
 import { getSource } from "@/lib/store/pptxSource";
 import type { ChartDocument } from "@/lib/types";
@@ -39,18 +40,30 @@ export class MissingSourceError extends Error {
 }
 
 /**
- * Logical size to render a chart for slide placement. Width is kept close to the
- * editor's on-screen canvas so the fixed-size fonts stay proportional (matching
- * what the user sees while editing); height follows the target rectangle's aspect
- * so the placed image isn't stretched. The PNG is rasterized at high DPI
- * (`PPTX_EXPORT_SCALE`) for a crisp result on the slide.
+ * Logical size to render an imported chart for slide placement. We render at the
+ * chart's *actual size on the slide* — captured on import as `origin.rect` (EMU,
+ * 914400/inch) — mapped to CSS reference pixels (96px ≈ 1in). Because the chart's
+ * fonts and strokes are authored in fixed pixels, sizing the canvas to the real
+ * chart footprint makes those land at a consistent, deck-matching point size
+ * (e.g. a 20px title ≈ 15pt) regardless of whether the chart is large or small —
+ * instead of a one-size-fits-all 600px canvas, which made small charts export
+ * with tiny text and oversized charts with huge text. The PNG is then rasterized
+ * at high DPI (`PPTX_EXPORT_SCALE`) for a crisp result on the slide.
+ *
+ * Width is clamped to a sane range so degenerate rects don't break the layout;
+ * height follows the source rect's aspect *exactly* so the placed image is never
+ * stretched (PowerPoint scales the PNG to fill the original rectangle).
  */
 export const PPTX_EXPORT_SCALE = 3;
+const PX_PER_INCH = 96;
+const MIN_RENDER_WIDTH = 360;
+const MAX_RENDER_WIDTH = 1280;
 
 export function slideRenderSize(rect: { cx: number; cy: number }): { width: number; height: number } {
-  const aspect = rect.cx > 0 ? rect.cy / rect.cx : 0.5;
-  const width = 600; // ≈ the editor canvas width, where the fonts look right
-  return { width, height: Math.min(1400, Math.max(150, Math.round(width * aspect))) };
+  const physicalWidth = rect.cx > 0 ? (rect.cx / EMU_PER_INCH) * PX_PER_INCH : 600;
+  const width = Math.min(MAX_RENDER_WIDTH, Math.max(MIN_RENDER_WIDTH, Math.round(physicalWidth)));
+  const aspect = rect.cx > 0 ? rect.cy / rect.cx : 0.6;
+  return { width, height: Math.max(120, Math.round(width * aspect)) };
 }
 
 /**
