@@ -74,4 +74,39 @@ describe("readSlidePreview", () => {
   it("returns a blank slide when the slide is missing", () => {
     expect(readSlidePreview(deck(), "ppt/slides/slide9.xml")).toEqual({ bg: "#ffffff", shapes: [] });
   });
+
+  it("inherits placeholder geometry from the slide layout", () => {
+    // Title placeholder on the slide has text but NO xfrm — geometry comes from
+    // the layout's matching placeholder.
+    const slide = `<p:sld ${P} ${A} ${R}><p:cSld><p:spTree>
+      <p:sp>
+        <p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>
+        <p:spPr/>
+        <p:txBody><a:bodyPr/><a:p><a:r><a:rPr sz="4000" b="1"/><a:t>Inherited Title</a:t></a:r></a:p></p:txBody>
+      </p:sp>
+    </p:spTree></p:cSld></p:sld>`;
+    const layout = `<p:sldLayout ${P} ${A}><p:cSld><p:spTree>
+      <p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="500000" y="400000"/><a:ext cx="9000000" cy="1000000"/></a:xfrm></p:spPr>
+      </p:sp></p:spTree></p:cSld></p:sldLayout>`;
+    const master = `<p:sldMaster ${P} ${A}><p:cSld><p:spTree/></p:cSld></p:sldMaster>`;
+    const bytes = zipSync({
+      "ppt/slides/slide1.xml": strToU8(slide),
+      "ppt/slides/_rels/slide1.xml.rels": strToU8(
+        `<Relationships xmlns="${REL}"><Relationship Id="rIdL" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/></Relationships>`,
+      ),
+      "ppt/slideLayouts/slideLayout1.xml": strToU8(layout),
+      "ppt/slideLayouts/_rels/slideLayout1.xml.rels": strToU8(
+        `<Relationships xmlns="${REL}"><Relationship Id="rIdM" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>`,
+      ),
+      "ppt/slideMasters/slideMaster1.xml": strToU8(master),
+    });
+    const preview = readSlidePreview(bytes, "ppt/slides/slide1.xml");
+    const texts = preview.shapes.filter((s) => s.kind === "text");
+    expect(texts).toHaveLength(1);
+    const title = texts[0] as Extract<(typeof preview.shapes)[number], { kind: "text" }>;
+    expect(title.paragraphs[0].runs[0].text).toBe("Inherited Title");
+    // geometry came from the layout placeholder
+    expect(title.rect).toEqual({ x: 500000, y: 400000, cx: 9000000, cy: 1000000 });
+  });
 });

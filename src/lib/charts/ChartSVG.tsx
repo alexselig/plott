@@ -9,10 +9,10 @@ import { arc as d3arc, area as d3area, curveCatmullRom, curveLinear, line as d3l
 import { categories, seriesList } from "@/lib/charts/access";
 import { effectiveColor, resolvedPalette } from "@/lib/charts/colors";
 import { dragToValue, snapToHalf } from "@/lib/charts/interact";
-import { barRadius, paintArea, paintFilledMark, paintLine, paintPoint, treatmentDefs, type ShapeFn } from "@/lib/charts/paint";
+import { barRadius, paintArea, paintBackground, paintFilledMark, paintLine, paintPoint, treatmentDefs, type ShapeFn } from "@/lib/charts/paint";
 import { EXTRA_KINDS, renderExtra } from "@/lib/charts/renderExtra";
 import { cardBg, TREATMENTS, treatmentOf } from "@/lib/charts/styles";
-import { FONT, fmt } from "@/lib/charts/theme";
+import { FONT, SERIF, fmt } from "@/lib/charts/theme";
 import type { ChartKind, ChartSpec, DataTable } from "@/lib/types";
 
 const CARTESIAN: ChartKind[] = [
@@ -263,7 +263,9 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
   const compact = !!spec.style.hideAxisLabels;
   // Legends are omitted from compact thumbnails (they overlap at small sizes).
   const showLegend = spec.style.showLegend && series.length > 1 && !compact;
-  const header = compact ? 8 : 28 + (showLegend ? 18 : 0);
+  const titleBand = compact ? 0 : showTitle ? 34 : 10;
+  const legendY = titleBand + 4;
+  const header = compact ? 8 : titleBand + (showLegend ? 18 : 0);
 
   const svgProps = {
     ref: setRef,
@@ -283,12 +285,12 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
   const bgRect = (
     <>
       {defs}
-      {transparent ? null : <rect width={width} height={height} fill={bgColor} />}
+      {transparent ? null : paintBackground(width, height, bgColor, T, palette, s, idp)}
     </>
   );
 
   const title = showTitle ? (
-    <text x={16} y={22} fontSize={15} fontWeight={600} fill={titleColor} fontFamily={labelFont}>
+    <text x={16} y={24} fontSize={20} fill={titleColor} fontFamily={SERIF}>
       {spec.title}
     </text>
   ) : null;
@@ -298,7 +300,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     </text>
   ) : null;
   const legendEl = showLegend ? (
-    <g transform="translate(16,34)">
+    <g transform={`translate(16,${legendY})`}>
       {(() => {
         let x = 0;
         return series.map((s, i) => {

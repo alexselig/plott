@@ -108,6 +108,90 @@ export function treatmentDefs(
   return kids.length ? <defs>{kids}</defs> : null;
 }
 
+/**
+ * Paint the chart's background — the treatment's card color plus its decoration
+ * (blueprint grid, halftone dots, frosted blobs) and the Confetti accent border —
+ * as SVG, so the exported image matches the on-screen canvas exactly.
+ */
+export function paintBackground(
+  width: number,
+  height: number,
+  bg: string,
+  T: TreatmentKey,
+  palette: string[],
+  s: number,
+  idp: string,
+): ReactNode {
+  const deco = TREATMENTS[T].chrome.deco;
+  const layers: ReactNode[] = [<rect key="bg" width={width} height={height} fill={bg} />];
+  const defs: ReactNode[] = [];
+
+  if (deco === "blueprintGrid") {
+    const tile = 22 * s;
+    defs.push(
+      <pattern key="grid" id={`${idp}-bggrid`} width={tile} height={tile} patternUnits="userSpaceOnUse">
+        <path d={`M ${tile} 0 L 0 0 0 ${tile}`} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth={s} />
+      </pattern>,
+    );
+    layers.push(<rect key="gridfill" width={width} height={height} fill={`url(#${idp}-bggrid)`} />);
+  } else if (deco === "halftoneDots") {
+    const tile = 11 * s;
+    defs.push(
+      <pattern key="dots" id={`${idp}-bgdots`} width={tile} height={tile} patternUnits="userSpaceOnUse">
+        <circle cx={tile / 2} cy={tile / 2} r={s} fill="rgba(0,0,0,.09)" />
+      </pattern>,
+    );
+    layers.push(<rect key="dotsfill" width={width} height={height} fill={`url(#${idp}-bgdots)`} />);
+  } else if (deco === "frostedBlobs") {
+    const blobs: [number, number, number][] = [
+      [0.2, 0.26, 0],
+      [0.8, 0.22, 1],
+      [0.55, 0.82, 2],
+    ];
+    blobs.forEach(([bx, by, ci]) => {
+      const c = lighten(palette[ci % palette.length] ?? "#8899cc", 0.3);
+      defs.push(
+        <radialGradient key={`bg${ci}`} id={`${idp}-bgblob${ci}`} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor={c} stopOpacity={0.4} />
+          <stop offset="60%" stopColor={c} stopOpacity={0} />
+        </radialGradient>,
+      );
+      layers.push(
+        <circle
+          key={`blob${ci}`}
+          cx={bx * width}
+          cy={by * height}
+          r={Math.max(width, height) * 0.4}
+          fill={`url(#${idp}-bgblob${ci})`}
+        />,
+      );
+    });
+  }
+
+  if (deco === "confetti") {
+    const inset = 1.5 * s;
+    layers.push(
+      <rect
+        key="border"
+        x={inset}
+        y={inset}
+        width={width - inset * 2}
+        height={height - inset * 2}
+        fill="none"
+        stroke={palette[0]}
+        strokeWidth={3 * s}
+      />,
+    );
+  }
+
+  return (
+    <>
+      {defs.length ? <defs>{defs}</defs> : null}
+      {layers}
+    </>
+  );
+}
+
 /* --------------------------------------------------------- filled marks -- */
 
 /** Paint a bar/column/wedge (any solid shape) under a treatment. */

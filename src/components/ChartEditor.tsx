@@ -12,7 +12,7 @@ import StylePanel from "@/components/StylePanel";
 import ChartSVG from "@/lib/charts/ChartSVG";
 import { CHART_CATALOG, CHART_GROUP_LABELS, type ChartGroup } from "@/lib/charts/catalog";
 import { sampleFor } from "@/lib/charts/sample";
-import { cardStyle, pageStyle, PALETTES, TREATMENTS, isPaletteKey, treatmentOf } from "@/lib/charts/styles";
+import { pageStyle, PALETTES, TREATMENTS, isPaletteKey, treatmentOf } from "@/lib/charts/styles";
 import { exportPng, exportSvg } from "@/lib/export/svg";
 import { exportChartToPptx, MissingSourceError, slideRenderSize } from "@/lib/pptx/exportPptx";
 import { addPreview, commitVersion, createDocument, getVersion, newChartId, nowIso } from "@/lib/id";
@@ -172,7 +172,6 @@ export default function ChartEditor({
   const transparent = !!spec.style.transparentBackground;
   const exportSize = doc.origin ? slideRenderSize(doc.origin.rect) : { width: 760, height: 460 };
   const treatment = treatmentOf(spec.style);
-  const chrome = TREATMENTS[treatment].chrome;
 
   const paletteKey = spec.style.paletteName ?? "signal";
   const paletteLabel =
@@ -300,12 +299,15 @@ export default function ChartEditor({
             {doc.deckId ? "‹ Back to deck" : "‹ Gallery"}
           </Link>
           <div className="h-[22px] w-px bg-rule" />
-          <input
-            value={spec.title}
-            onChange={(e) => setSpec((s) => ({ ...s, title: e.target.value }))}
-            aria-label="Chart title"
-            className="plott-serif w-[340px] border-none bg-transparent text-[24px] text-ink outline-none"
-          />
+          <div className="flex min-w-0 flex-col">
+            <input
+              value={spec.title}
+              onChange={(e) => setSpec((s) => ({ ...s, title: e.target.value }))}
+              aria-label="Chart title"
+              className="plott-serif w-[340px] max-w-full border-none bg-transparent text-[22px] leading-tight text-ink outline-none"
+            />
+            <span className="plott-mono truncate text-[9.5px] uppercase tracking-[0.14em] text-faint">{subtitle}</span>
+          </div>
           {dirty && <span className="plott-mono text-[10px] uppercase tracking-wider text-accent">• edited</span>}
         </div>
         <div className="relative flex items-center gap-2.5">
@@ -510,29 +512,24 @@ export default function ChartEditor({
           )}
         </div>
 
-        {/* canvas */}
+        {/* canvas — a true WYSIWYG of the exported image */}
         <div className="flex flex-1 flex-col items-center justify-center p-[34px]" style={pageStyle()}>
-          <div className="w-full max-w-[640px]" style={{ ...cardStyle(spec.style), padding: "26px 26px 20px" }}>
-            <div className="plott-serif mb-1 text-[22px]" style={{ color: chrome.dark ? "#f0eef5" : "#221f1a" }}>
-              {spec.title}
-            </div>
-            <div className="plott-mono mb-3.5 text-[10px] uppercase tracking-[0.1em]" style={{ color: chrome.labelColor }}>
-              {subtitle}
-            </div>
-            <div className={`h-[330px] ${transparent ? "cf-checkerboard rounded-md" : ""}`}>
-              <ChartSVG
-                spec={spec}
-                data={data}
-                width={580}
-                height={340}
-                transparent
-                showTitle={false}
-                onEditValue={editValue}
-                fluid
-              />
-            </div>
+          <div
+            className={`w-full max-w-[680px] overflow-hidden rounded-xl shadow-[0_12px_34px_-14px_rgba(0,0,0,0.3)] ${transparent ? "cf-checkerboard" : ""}`}
+            style={{ aspectRatio: `${exportSize.width} / ${exportSize.height}` }}
+          >
+            <ChartSVG
+              spec={spec}
+              data={data}
+              width={exportSize.width}
+              height={exportSize.height}
+              transparent={transparent}
+              showTitle
+              onEditValue={editValue}
+              fluid
+            />
           </div>
-          <div className="plott-mono mt-4 text-[11px]" style={{ color: chrome.dark ? "rgba(255,255,255,.55)" : "#a49a88" }}>
+          <div className="plott-mono mt-4 text-[11px] text-[#a49a88]">
             ↕ Drag the bars to adjust values, or edit the table →
           </div>
         </div>

@@ -2,6 +2,9 @@
 
 export const FONT =
   'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+/** Serif face for chart titles (matches the app's Instrument Serif, with fallbacks
+ *  so a rasterized export still renders a serif even without the web font). */
+export const SERIF = 'var(--font-instrument-serif), Georgia, "Times New Roman", serif';
 export const INK = "#111827";
 export const AXIS = "#6b7280";
 export const GRID = "#e5e7eb";

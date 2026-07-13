@@ -92,9 +92,18 @@ function runColor(rPr: unknown): string | undefined {
   return srgb ? `#${srgb}` : undefined;
 }
 
-function parseTextShape(sp: XmlNode): PreviewTextShape | null {
+/** Placeholder key (`type:idx`) so a slide shape can inherit geometry from its layout/master. */
+function phKeyOf(sp: XmlNode): string | null {
+  const ph = child(child(child(sp, "p:nvSpPr"), "p:nvPr"), "p:ph");
+  if (!ph) return null;
+  const type = attr(ph, "type") ?? "body";
+  const idx = attr(ph, "idx") ?? "";
+  return `${type}:${idx}`;
+}
+
+/** Parse a slide text box: its own geometry (may be null → inherited) + text runs. */
+function parseTextShape(sp: XmlNode): { rect: EmuRect | null; phKey: string | null; shape: PreviewTextShape } | null {
   const rect = readXfrmRect(child(sp, "p:spPr"));
-  if (!rect || rect.cx <= 0 || rect.cy <= 0) return null;
   const txBody = child(sp, "p:txBody");
   if (!txBody) return null;
   const bodyPr = child(txBody, "a:bodyPr");
@@ -123,8 +132,23 @@ function parseTextShape(sp: XmlNode): PreviewTextShape | null {
     }
     if (runs.length) paragraphs.push({ runs, align, bullet });
   }
-  if (!paragraphs.length) return null;
-  return { kind: "text", rect, anchor, paragraphs };
+  if (!paragraphs.length) return null; // only render text the slide actually has
+  return {
+    rect: rect && rect.cx > 0 && rect.cy > 0 ? rect : null,
+    phKey: phKeyOf(sp),
+    shape: { kind: "text", rect: rect ?? { x: 0, y: 0, cx: 0, cy: 0 }, anchor, paragraphs },
+  };
+}
+
+/** Map placeholder key → geometry from a layout/master part (for inheritance). */
+function placeholderGeom(spTree: unknown): Map<string, EmuRect> {
+  const map = new Map<string, EmuRect>();
+  for (const sp of asArray<XmlNode>((spTree as XmlNode)?.["p:sp"])) {
+    const key = phKeyOf(sp);
+    const rect = readXfrmRect(child(sp, "p:spPr"));
+    if (key && rect && rect.cx > 0 && rect.cy > 0 && !map.has(key)) map.set(key, rect);
+  }
+  return map;
 }
 
 const MIME: Record<string, string> = {
@@ -145,55 +169,116 @@ function bytesToDataUrl(bytes: Uint8Array, ext: string): string {
   return `data:${MIME[ext.toLowerCase()] ?? "image/png"};base64,${b64}`;
 }
 
-function parseImageShape(
-  pic: XmlNode,
-  rels: Record<string, string>,
-  dir: string,
-  files: Record<string, Uint8Array>,
-): PreviewImageShape | null {
-  const rect = readXfrmRect(child(pic, "p:spPr"));
-  if (!rect || rect.cx <= 0 || rect.cy <= 0) return null;
-  const embed = attr(child(child(pic, "p:blipFill"), "a:blip"), "r:embed");
-  if (!embed) return null;
-  const target = rels[embed];
-  if (!target) return null;
-  const path = resolvePath(dir, target);
-  const bytes = files[path];
-  if (!bytes) return null;
-  const ext = path.split(".").pop() ?? "png";
-  if (!MIME[ext.toLowerCase()]) return null;
-  return { kind: "image", rect, href: bytesToDataUrl(bytes, ext) };
+/** Rels + directory for a part path (for resolving its images). */
+function partRels(files: Record<string, Uint8Array>, partPath: string): { rels: Record<string, string>; dir: string } {
+  const dir = partPath.replace(/\/[^/]+$/, "");
+  const relsPath = `${dir}/_rels/${partPath.split("/").pop()}.rels`;
+  return { rels: files[relsPath] ? parseRels(strFromU8(files[relsPath])) : {}, dir };
 }
 
-/** Read the background color + text/image shapes of one slide for previewing. */
+/** First rel target of a given relationship type (e.g. slideLayout, slideMaster). */
+function relTarget(files: Record<string, Uint8Array>, partPath: string, typeSuffix: string): string | null {
+  const dir = partPath.replace(/\/[^/]+$/, "");
+  const relsPath = `${dir}/_rels/${partPath.split("/").pop()}.rels`;
+  const xml = files[relsPath];
+  if (!xml) return null;
+  const doc = parser.parse(strFromU8(xml)) as XmlNode;
+  for (const rel of asArray<XmlNode>(child(doc, "Relationships")?.["Relationship"])) {
+    if ((attr(rel, "Type") ?? "").endsWith(typeSuffix)) {
+      const t = attr(rel, "Target");
+      if (t) return resolvePath(dir, t);
+    }
+  }
+  return null;
+}
+
+/** Extract the image shapes of a part (slide/layout/master). */
+function partImages(files: Record<string, Uint8Array>, partPath: string): PreviewImageShape[] {
+  const bytes = files[partPath];
+  if (!bytes) return [];
+  const { rels, dir } = partRels(files, partPath);
+  const doc = parser.parse(strFromU8(bytes)) as XmlNode;
+  const root = child(doc, "p:sld") ?? child(doc, "p:sldLayout") ?? child(doc, "p:sldMaster") ?? doc;
+  const spTree = child(child(root, "p:cSld"), "p:spTree");
+  const out: PreviewImageShape[] = [];
+  for (const pic of asArray<XmlNode>(spTree?.["p:pic"])) {
+    const rect = readXfrmRect(child(pic, "p:spPr"));
+    if (!rect || rect.cx <= 0 || rect.cy <= 0) continue;
+    const embed = attr(child(child(pic, "p:blipFill"), "a:blip"), "r:embed");
+    if (!embed) continue;
+    const target = rels[embed];
+    if (!target) continue;
+    const path = resolvePath(dir, target);
+    const imgBytes = files[path];
+    if (!imgBytes) continue;
+    const ext = path.split(".").pop() ?? "png";
+    if (!MIME[ext.toLowerCase()]) continue;
+    out.push({ kind: "image", rect, href: bytesToDataUrl(imgBytes, ext) });
+  }
+  return out;
+}
+
+/** Background color of a part (solid fill), or null. */
+function partBg(root: unknown): string | null {
+  if (!root) return null;
+  const fill = child(child(child(child(root, "p:cSld"), "p:bg"), "p:bgPr"), "a:solidFill");
+  const hex = attr(child(fill, "a:srgbClr"), "val");
+  return hex ? `#${hex}` : null;
+}
+
+/** Placeholder geometry map for a part path (layout/master). */
+function partPlaceholders(files: Record<string, Uint8Array>, partPath: string | null): Map<string, EmuRect> {
+  if (!partPath || !files[partPath]) return new Map();
+  const doc = parser.parse(strFromU8(files[partPath])) as XmlNode;
+  const root = child(doc, "p:sldLayout") ?? child(doc, "p:sldMaster") ?? doc;
+  return placeholderGeom(child(child(root, "p:cSld"), "p:spTree"));
+}
+
+/**
+ * Read the background + text/image shapes of one slide for previewing, resolving
+ * placeholder geometry from the slide's layout and master so real decks (whose
+ * titles/bodies are placeholders without explicit geometry) show their content.
+ */
 export function readSlidePreview(bytes: Uint8Array, slidePath: string): SlidePreview {
   const files = unzipSync(bytes);
   const slideBytes = files[slidePath];
   if (!slideBytes) return { bg: "#ffffff", shapes: [] };
 
-  const dir = slidePath.replace(/\/[^/]+$/, "");
-  const relsPath = `${dir}/_rels/${slidePath.split("/").pop()}.rels`;
-  const rels = files[relsPath] ? parseRels(strFromU8(files[relsPath])) : {};
-
   const doc = parser.parse(strFromU8(slideBytes)) as XmlNode;
-  const cSld = child(child(doc, "p:sld"), "p:cSld");
-  const spTree = child(cSld, "p:spTree");
+  const root = child(doc, "p:sld") ?? doc;
+  const spTree = child(child(root, "p:cSld"), "p:spTree");
 
-  // Background color (best-effort: solid fill on the slide's bg).
-  const bgFill = child(child(child(cSld, "p:bg"), "p:bgPr"), "a:solidFill");
-  const bgHex = attr(child(bgFill, "a:srgbClr"), "val");
-  const bg = bgHex ? `#${bgHex}` : "#ffffff";
+  // slide → layout → master chain (for placeholder geometry + inherited images/bg).
+  const layoutPath = relTarget(files, slidePath, "slideLayout");
+  const masterPath = layoutPath ? relTarget(files, layoutPath, "slideMaster") : null;
+  const layoutGeom = partPlaceholders(files, layoutPath);
+  const masterGeom = partPlaceholders(files, masterPath);
+  const geomFor = (key: string | null): EmuRect | null => {
+    if (!key) return null;
+    return layoutGeom.get(key) ?? masterGeom.get(key) ?? null;
+  };
 
-  const images: PreviewShape[] = [];
-  for (const pic of asArray<XmlNode>(spTree?.["p:pic"])) {
-    const s = parseImageShape(pic, rels, dir, files);
-    if (s) images.push(s);
-  }
+  // Background: slide → layout → master → white.
+  const layoutRoot = layoutPath && files[layoutPath] ? child(parser.parse(strFromU8(files[layoutPath])) as XmlNode, "p:sldLayout") : null;
+  const masterRoot = masterPath && files[masterPath] ? child(parser.parse(strFromU8(files[masterPath])) as XmlNode, "p:sldMaster") : null;
+  const bg = partBg(root) ?? partBg(layoutRoot) ?? partBg(masterRoot) ?? "#ffffff";
+
+  // Images: master + layout (logos etc.) behind the slide's own images.
+  const images: PreviewShape[] = [
+    ...(masterPath ? partImages(files, masterPath) : []),
+    ...(layoutPath ? partImages(files, layoutPath) : []),
+    ...partImages(files, slidePath),
+  ];
+
+  // Text: only what the slide itself carries, with geometry inherited if needed.
   const texts: PreviewShape[] = [];
   for (const sp of asArray<XmlNode>(spTree?.["p:sp"])) {
-    const s = parseTextShape(sp);
-    if (s) texts.push(s);
+    const parsed = parseTextShape(sp);
+    if (!parsed) continue;
+    const rect = parsed.rect ?? geomFor(parsed.phKey);
+    if (!rect) continue;
+    texts.push({ ...parsed.shape, rect });
   }
-  // Images first (drawn behind), then text on top.
+
   return { bg, shapes: [...images, ...texts] };
 }
