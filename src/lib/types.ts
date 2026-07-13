@@ -177,6 +177,8 @@ export interface ChartDocument {
   subject?: string;
   /** Optional presentation/deck this chart belongs to (gallery grouping). */
   deck?: string;
+  /** Id of the Deck (in the deck store) this chart belongs to, if any. */
+  deckId?: string;
   /** Perceptual (dHash) fingerprints of exported images, per version, for
    *  copy/paste-robust re-open matching. */
   previews?: { version: number; hash: string }[];

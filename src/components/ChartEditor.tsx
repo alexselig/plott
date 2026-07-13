@@ -227,8 +227,11 @@ export default function ChartEditor({
       {/* header */}
       <header className="flex flex-none items-center justify-between border-b border-rule bg-paper px-[26px] py-[13px]">
         <div className="flex items-center gap-4">
-          <Link href="/" className="plott-mono text-[13px] text-muted hover:text-accent">
-            ‹ Gallery
+          <Link
+            href={doc.deckId ? `/deck?id=${doc.deckId}` : "/"}
+            className="plott-mono text-[13px] text-muted hover:text-accent"
+          >
+            {doc.deckId ? "‹ Back to deck" : "‹ Gallery"}
           </Link>
           <div className="h-[22px] w-px bg-rule" />
           <input

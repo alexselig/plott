@@ -140,19 +140,14 @@ function injectPic(slideXml: string, pic: string): string {
   return slideXml.slice(0, at) + pic + slideXml.slice(at);
 }
 
-/**
- * Return new `.pptx` bytes with the Plott PNG placed as an overlay on top of the
- * original chart. Throws if the origin's slide can't be found in the archive.
- */
-export function placeOverlay(
-  sourceBytes: Uint8Array,
+/** Apply one overlay into an already-unzipped file map (mutates `files`). */
+function applyOverlay(
+  files: Record<string, Uint8Array>,
   origin: PptxOrigin,
   pngBytes: Uint8Array,
   opts: PlaceOverlayOptions,
-): Uint8Array {
-  const files: Record<string, Uint8Array> = unzipSync(sourceBytes);
-  const slideBytes = files[origin.slidePath];
-  if (!slideBytes) throw new Error(`Slide not found in source: ${origin.slidePath}`);
+): void {
+  if (!files[origin.slidePath]) throw new Error(`Slide not found in source: ${origin.slidePath}`);
 
   // 1. media part
   const mediaPath = uniqueMediaPath(files, opts.stamp.id);
@@ -169,11 +164,54 @@ export function placeOverlay(
     : undefined;
   const { imageRid, hyperlinkRid } = addRelationships(files, relsPath, mediaTarget, editorUrl);
 
-  // 3. inject the picture at the original chart's rectangle
-  const slideXml = strFromU8(slideBytes);
+  // 3. inject the picture at the original chart's rectangle. Re-read the slide
+  //    XML (a prior overlay on the same slide may have mutated it) so shape ids
+  //    stay unique.
+  const slideXml = strFromU8(files[origin.slidePath]);
   const shapeId = maxShapeId(slideXml) + 1;
   const pic = buildPic(shapeId, imageRid, origin, opts.stamp, hyperlinkRid);
   files[origin.slidePath] = strToU8(injectPic(slideXml, pic));
+}
 
+/**
+ * Return new `.pptx` bytes with the Plott PNG placed as an overlay on top of the
+ * original chart. Throws if the origin's slide can't be found in the archive.
+ */
+export function placeOverlay(
+  sourceBytes: Uint8Array,
+  origin: PptxOrigin,
+  pngBytes: Uint8Array,
+  opts: PlaceOverlayOptions,
+): Uint8Array {
+  const files: Record<string, Uint8Array> = unzipSync(sourceBytes);
+  applyOverlay(files, origin, pngBytes, opts);
+  return zipSync(files);
+}
+
+/** One chart's overlay for a whole-deck export. */
+export interface OverlayPlacement {
+  origin: PptxOrigin;
+  pngBytes: Uint8Array;
+  stamp: OverlayStamp;
+}
+
+/**
+ * Place many overlays into one `.pptx` (whole-deck export): unzip once, apply
+ * each placement (supports multiple charts per slide and many slides), zip once.
+ * A placement whose slide is missing is skipped rather than aborting the deck.
+ */
+export function placeOverlays(
+  sourceBytes: Uint8Array,
+  placements: OverlayPlacement[],
+  opts: { editorUrl?: string } = {},
+): Uint8Array {
+  const files: Record<string, Uint8Array> = unzipSync(sourceBytes);
+  for (const p of placements) {
+    try {
+      applyOverlay(files, p.origin, p.pngBytes, { stamp: p.stamp, editorUrl: opts.editorUrl });
+    } catch {
+      /* skip a placement whose slide can't be found */
+    }
+  }
   return zipSync(files);
 }

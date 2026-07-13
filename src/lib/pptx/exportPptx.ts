@@ -5,8 +5,8 @@
 
 import { EDITOR_PUBLIC_URL } from "@/lib/constants";
 import { svgToPngBytes } from "@/lib/export/svg";
-import { stampFor } from "@/lib/id";
-import { placeOverlay } from "@/lib/pptx/write";
+import { getVersion, stampFor } from "@/lib/id";
+import { placeOverlay, placeOverlays, type OverlayPlacement } from "@/lib/pptx/write";
 import { getSource } from "@/lib/store/pptxSource";
 import type { ChartDocument } from "@/lib/types";
 
@@ -61,4 +61,36 @@ export async function exportChartToPptx(
     editorUrl: EDITOR_PUBLIC_URL,
   });
   downloadPptx(out, pptxOutputName(origin.fileName));
+}
+
+/** A deck chart paired with its rendered export SVG node. */
+export interface DeckChartExport {
+  doc: ChartDocument;
+  svg: SVGSVGElement;
+}
+
+/**
+ * Place every chart in a deck onto its originating slide and download one
+ * `.pptx`. `sourceBytes` is the deck's original file; each chart's `doc.origin`
+ * says where its image goes. Charts without an origin or SVG are skipped.
+ */
+export async function exportDeckToPptx(
+  fileName: string,
+  sourceBytes: Uint8Array,
+  charts: DeckChartExport[],
+): Promise<void> {
+  const placements: OverlayPlacement[] = [];
+  for (const { doc, svg } of charts) {
+    if (!doc.origin || !svg) continue;
+    const transparent = !!getVersion(doc).spec.style.transparentBackground;
+    const png = await svgToPngBytes(svg, 2, transparent);
+    const stamp = stampFor(doc);
+    placements.push({
+      origin: doc.origin,
+      pngBytes: png,
+      stamp: { id: stamp.chartId, version: stamp.version, ts: stamp.timestamp },
+    });
+  }
+  const out = placeOverlays(sourceBytes, placements, { editorUrl: EDITOR_PUBLIC_URL });
+  downloadPptx(out, pptxOutputName(fileName));
 }

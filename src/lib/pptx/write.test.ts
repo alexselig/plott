@@ -2,7 +2,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 
 import { readPptxRaw } from "@/lib/pptx/read";
-import { placeOverlay } from "@/lib/pptx/write";
+import { placeOverlay, placeOverlays } from "@/lib/pptx/write";
 import type { PptxOrigin } from "@/lib/types";
 
 const A = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"';
@@ -125,5 +125,97 @@ describe("placeOverlay", () => {
 
   it("throws when the origin slide is missing", () => {
     expect(() => placeOverlay(buildDeck(), { ...ORIGIN, slidePath: "ppt/slides/slide9.xml" }, PNG, { stamp: STAMP })).toThrow();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Whole-deck export: many overlays into one .pptx.                     */
+/* ------------------------------------------------------------------ */
+
+function slideXml(id: number): string {
+  return `<p:sld ${P} ${A} ${R}><p:cSld><p:spTree><p:graphicFrame>
+    <p:nvGraphicFramePr><p:cNvPr id="${id}" name="Chart"/></p:nvGraphicFramePr>
+    <p:xfrm><a:off x="100" y="200"/><a:ext cx="300" cy="400"/></p:xfrm>
+    <a:graphic><a:graphicData uri="${CHART_URI}"><c:chart ${C} r:id="rId2"/></a:graphicData></a:graphic>
+  </p:graphicFrame></p:spTree></p:cSld></p:sld>`;
+}
+function slideRels(): string {
+  return `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/></Relationships>`;
+}
+
+function buildMultiSlideDeck(): Uint8Array {
+  return zipSync({
+    "[Content_Types].xml": strToU8(
+      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/></Types>`,
+    ),
+    "ppt/presentation.xml": strToU8(
+      `<p:presentation ${P} ${R}><p:sldIdLst><p:sldId id="256" r:id="rId1"/><p:sldId id="257" r:id="rId2"/></p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/></p:presentation>`,
+    ),
+    "ppt/_rels/presentation.xml.rels": strToU8(
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/></Relationships>`,
+    ),
+    "ppt/slides/slide1.xml": strToU8(slideXml(5)),
+    "ppt/slides/slide2.xml": strToU8(slideXml(7)),
+    "ppt/slides/_rels/slide1.xml.rels": strToU8(slideRels()),
+    "ppt/slides/_rels/slide2.xml.rels": strToU8(slideRels()),
+    "ppt/charts/chart1.xml": strToU8(
+      `<c:chartSpace ${C} ${A}><c:chart><c:plotArea><c:barChart><c:barDir val="col"/><c:ser><c:cat><c:strRef><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>A</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:numCache><c:ptCount val="1"/><c:pt idx="0"><c:v>1</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>`,
+    ),
+  });
+}
+
+const originFor = (slidePath: string, gfId: number): PptxOrigin => ({
+  fileName: "deck.pptx",
+  sourceToken: "t",
+  slideIndex: 0,
+  slidePath,
+  graphicFrameId: gfId,
+  rect: { x: 100, y: 200, cx: 300, cy: 400 },
+  slideSize: { cx: 12192000, cy: 6858000 },
+});
+
+describe("placeOverlays (whole deck)", () => {
+  it("places overlays across multiple slides in one .pptx", () => {
+    const placements = [
+      { origin: originFor("ppt/slides/slide1.xml", 5), pngBytes: PNG, stamp: { id: "PLT-AAAA", version: 1, ts: "t1" } },
+      { origin: originFor("ppt/slides/slide2.xml", 7), pngBytes: PNG, stamp: { id: "PLT-BBBB", version: 2, ts: "t2" } },
+    ];
+    const out = placeOverlays(buildMultiSlideDeck(), placements, { editorUrl: "https://x/editor" });
+    const files = unzipSync(out);
+
+    expect(Object.keys(files).filter((p) => p.startsWith("ppt/media/") && p.endsWith(".png"))).toHaveLength(2);
+    expect(strFromU8(files["ppt/slides/slide1.xml"])).toMatch(/descr="plott:PLT-AAAA/);
+    expect(strFromU8(files["ppt/slides/slide2.xml"])).toMatch(/descr="plott:PLT-BBBB/);
+
+    // Round-trips: both overlays are re-detected.
+    const overlays = readPptxRaw(out).overlays;
+    expect(overlays.map((o) => o.id).sort()).toEqual(["PLT-AAAA", "PLT-BBBB"]);
+  });
+
+  it("gives unique shape + rel ids to two overlays on the same slide", () => {
+    const placements = [
+      { origin: originFor("ppt/slides/slide1.xml", 5), pngBytes: PNG, stamp: { id: "PLT-AAAA", version: 1, ts: "t1" } },
+      { origin: originFor("ppt/slides/slide1.xml", 5), pngBytes: PNG, stamp: { id: "PLT-CCCC", version: 1, ts: "t3" } },
+    ];
+    const out = placeOverlays(buildMultiSlideDeck(), placements);
+    const files = unzipSync(out);
+    const slide = strFromU8(files["ppt/slides/slide1.xml"]);
+    const ids = [...slide.matchAll(/<p:cNvPr id="(\d+)"/g)].map((m) => Number(m[1]));
+    expect(new Set(ids).size).toBe(ids.length); // all unique
+    const rels = strFromU8(files["ppt/slides/_rels/slide1.xml.rels"]);
+    const relIds = [...rels.matchAll(/Id="rId(\d+)"/g)].map((m) => Number(m[1]));
+    expect(new Set(relIds).size).toBe(relIds.length);
+    // two pics on the slide
+    expect((slide.match(/<p:pic/g) ?? []).length).toBe(2);
+  });
+
+  it("skips a placement whose slide is missing without aborting the rest", () => {
+    const placements = [
+      { origin: originFor("ppt/slides/slide9.xml", 5), pngBytes: PNG, stamp: { id: "PLT-GONE", version: 1, ts: "t" } },
+      { origin: originFor("ppt/slides/slide2.xml", 7), pngBytes: PNG, stamp: { id: "PLT-BBBB", version: 1, ts: "t" } },
+    ];
+    const out = placeOverlays(buildMultiSlideDeck(), placements);
+    const overlays = readPptxRaw(out).overlays;
+    expect(overlays.map((o) => o.id)).toEqual(["PLT-BBBB"]);
   });
 });

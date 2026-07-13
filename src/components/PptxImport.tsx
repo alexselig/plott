@@ -7,11 +7,14 @@ import Link from "next/link";
 import Masthead from "@/components/Masthead";
 import { PENDING_KEY } from "@/components/ChartPicker";
 import ChartSVG from "@/lib/charts/ChartSVG";
+import { createDocument } from "@/lib/id";
 import { readPptx } from "@/lib/pptx";
 import { typeDisplayName } from "@/lib/plott/mapping";
-import { getDocument } from "@/lib/store/db";
+import { getDocument, saveDocument } from "@/lib/store/db";
+import { newDeckId, saveDeck } from "@/lib/store/deck";
 import { saveSource } from "@/lib/store/pptxSource";
 import type { ExtractedChart, PlacedOverlay, PptxReadResult, SlideSize } from "@/lib/pptx";
+import type { PptxOrigin } from "@/lib/types";
 
 type Phase = "upload" | "reading" | "review" | "error";
 
@@ -22,6 +25,7 @@ export default function PptxImport() {
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [building, setBuilding] = useState(false);
   const bytesRef = useRef<Uint8Array | null>(null);
 
   const onFile = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
@@ -80,6 +84,40 @@ export default function PptxImport() {
     }
   }
 
+  async function createDeck() {
+    const bytes = bytesRef.current;
+    const read = result;
+    if (!bytes || !read || read.charts.length === 0) return;
+    setBuilding(true);
+    setNote(null);
+    try {
+      const sourceToken = await saveSource(fileName, bytes);
+      const name = fileName.replace(/\.pptx$/i, "");
+      const id = newDeckId();
+      const chartIds: string[] = [];
+      for (const ex of read.charts) {
+        const origin: PptxOrigin = {
+          fileName,
+          sourceToken,
+          slideIndex: ex.slideIndex,
+          slidePath: ex.slidePath,
+          graphicFrameId: ex.graphicFrameId,
+          rect: ex.rect,
+          slideSize: read.slideSize,
+        };
+        const doc = { ...createDocument(ex.spec, ex.data, ex.title), origin, deck: name, deckId: id };
+        await saveDocument(doc);
+        chartIds.push(doc.id);
+      }
+      const ts = new Date().toISOString();
+      await saveDeck({ id, name, fileName, sourceToken, slideSize: read.slideSize, chartIds, createdAt: ts, updatedAt: ts });
+      router.push(`/deck?id=${id}`);
+    } catch {
+      setBuilding(false);
+      setNote("Couldn't build the deck. Try again.");
+    }
+  }
+
   async function reopenOverlay(o: PlacedOverlay) {
     const doc = await getDocument(o.id);
     if (!doc) {
@@ -120,12 +158,29 @@ export default function PptxImport() {
             {fileName}
           </div>
           <h1 className="plott-serif m-0 mb-1.5 text-[40px] font-normal tracking-[-.01em]">
-            {result.charts.length > 0 ? "Pick a chart to rebuild" : "No native charts — reopen a Plott chart"}
+            {result.charts.length > 0 ? "Rebuild this presentation" : "No native charts — reopen a Plott chart"}
           </h1>
-          <p className="m-0 mb-8 text-[14px] text-muted">
-            We pulled the data and the exact slide position. Restyle it in Plott, then place the image back on the slide.
+          <p className="m-0 mb-6 text-[14px] text-muted">
+            We pulled every chart’s data and exact slide position. Restyle them in Plott, then export the whole deck —
+            each image drops back onto its original slide.
           </p>
           {note && <p className="mb-4 text-sm text-accent">{note}</p>}
+
+          {result.charts.length > 0 && (
+            <div className="mb-6 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={createDeck}
+                disabled={building}
+                className="rounded-lg bg-accent px-[22px] py-3 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {building
+                  ? "Building deck…"
+                  : `Edit whole deck (${result.charts.length} chart${result.charts.length > 1 ? "s" : ""}) →`}
+              </button>
+              <span className="plott-mono text-[11px] text-faint">or edit one chart at a time below</span>
+            </div>
+          )}
 
           {result.charts.length > 0 && (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
