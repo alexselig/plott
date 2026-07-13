@@ -11,7 +11,7 @@ import { effectiveColor, resolvedPalette } from "@/lib/charts/colors";
 import { dragToValue, snapToHalf } from "@/lib/charts/interact";
 import { barRadius, paintArea, paintFilledMark, paintLine, paintPoint, treatmentDefs, type ShapeFn } from "@/lib/charts/paint";
 import { EXTRA_KINDS, renderExtra } from "@/lib/charts/renderExtra";
-import { cardBg, TREATMENTS, treatmentOf } from "@/lib/charts/styles";
+import { cardBg, CHART_LABEL_COLOR, CHART_TITLE_COLOR, treatmentOf } from "@/lib/charts/styles";
 import { FONT, fmt } from "@/lib/charts/theme";
 import type { ChartKind, ChartSpec, DataTable } from "@/lib/types";
 
@@ -245,13 +245,12 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
   const color = (i: number) => effectiveColor(spec, i);
   const curveFn = spec.style.curve === "smooth" ? curveCatmullRom.alpha(0.5) : curveLinear;
   const T = treatmentOf(spec.style);
-  const chrome = TREATMENTS[T].chrome;
   const s = width / 200; // treatment lengths are authored in a 200-wide viewBox
-  const bg = cardBg(spec.style);
+  const bg = cardBg();
   const bgColor = bg;
   const labelFont = FONT;
-  const labelColor = chrome.labelColor;
-  const titleColor = chrome.dark ? "#e9e6f2" : "#2a2722";
+  const labelColor = CHART_LABEL_COLOR;
+  const titleColor = CHART_TITLE_COLOR;
   const defs = treatmentDefs(T, palette, s, idp);
   const barFrac = 0.66;
   const pointR = 2.6 * s;
@@ -328,18 +327,25 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     const values = series[0]?.values ?? [];
     const slices: Slice[] = cats.map((label, i) => ({ label, value: Math.max(0, values[i] ?? 0) }));
     const total = slices.reduce((a, b) => a + b.value, 0) || 1;
-    const arcs = d3pie<Slice>().value((d) => d.value).sort(null).padAngle((3.5 * Math.PI) / 180)(slices);
-    const arcGen = d3arc<PieArcDatum<Slice>>().innerRadius(innerR).outerRadius(R);
+    // No angular padding: wedges abut, and a constant-width background-colored
+    // separator drawn on top creates clean, equidistant gaps between every slice
+    // (a fixed padAngle produces wedge-shaped gaps that converge at the center).
+    const arcs = d3pie<Slice>().value((d) => d.value).sort(null).padAngle(0)(slices);
+    const arcGen = d3arc<PieArcDatum<Slice>>().innerRadius(innerR).outerRadius(R).padAngle(0);
+    const wedgePaths = arcs.map((a) => arcGen(a) ?? "");
+    const sepW = 2.2 * s;
     return (
       <svg {...svgProps}>
         {bgRect}
         {title}
         <g transform={`translate(${cx},${cy})`}>
-          {arcs.map((a, i) => {
-            const d = arcGen(a) ?? "";
+          {wedgePaths.map((d, i) => {
             const shape: ShapeFn = (attrs, key) => <path key={key} d={d} {...attrs} />;
             return <g key={i}>{paintFilledMark(shape, palette, i, T, s, idp)}</g>;
           })}
+          {wedgePaths.map((d, i) => (
+            <path key={`sep-${i}`} d={d} fill="none" stroke={bg} strokeWidth={sepW} strokeLinejoin="round" />
+          ))}
         </g>
         {!compact && (
           <g transform={`translate(${width - legendW},${header + 4})`}>

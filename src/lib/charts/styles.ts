@@ -184,53 +184,48 @@ export function treatmentOf(style: ChartStyle): TreatmentKey {
   return isTreatmentKey(style.treatment ?? "") ? (style.treatment as TreatmentKey) : "studioFlat";
 }
 
-/** The solid background color the chart SVG should paint (card, or its solid approx). */
-export function cardBg(style: ChartStyle): string {
-  const c = TREATMENTS[treatmentOf(style)].chrome;
-  return c.cardSolid ?? c.card;
+/* ------------------------------------------------------------------ */
+/* Constant chart background (matches the app, regardless of treatment) */
+/* ------------------------------------------------------------------ */
+
+/** App page background behind the chart card (`--paper`). */
+export const CHART_PAGE_BG = "#f5f0e6";
+/** App card background directly behind the chart (`--panel`). */
+export const CHART_CARD_BG = "#fffdf8";
+/** Axis/label color that reads on the constant card background. */
+export const CHART_LABEL_COLOR = "#8a8578";
+/** Title color that reads on the constant card background (`--ink`-ish). */
+export const CHART_TITLE_COLOR = "#221f1a";
+
+/**
+ * The solid background the chart SVG paints. Kept constant across treatments so
+ * changing the style never changes the background behind the chart — only the
+ * marks (and the card's frame accents) change.
+ */
+export function cardBg(): string {
+  return CHART_CARD_BG;
 }
 
-/** CSS for the editor/gallery page area behind the chart card (with decoration). */
-export function pageStyle(style: ChartStyle): CSSProperties {
-  const c = TREATMENTS[treatmentOf(style)].chrome;
-  const pal = style.palette?.length ? style.palette : PALETTES.signal.colors;
-  if (c.deco === "blueprintGrid")
-    return {
-      backgroundColor: c.page,
-      backgroundImage:
-        "linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px)",
-      backgroundSize: "22px 22px",
-    };
-  if (c.deco === "halftoneDots")
-    return {
-      backgroundColor: c.page,
-      backgroundImage: "radial-gradient(rgba(0,0,0,.09) 1px, transparent 1px)",
-      backgroundSize: "11px 11px",
-    };
-  if (c.deco === "frostedBlobs") {
-    const blob = (hex: string, x: string, y: string) =>
-      `radial-gradient(circle at ${x} ${y}, ${lighten(hex, 0.3)}66, transparent 55%)`;
-    return {
-      backgroundColor: c.page,
-      backgroundImage: [blob(pal[0], "20%", "30%"), blob(pal[1], "78%", "24%"), blob(pal[2], "52%", "78%")].join(","),
-    };
-  }
-  return { background: c.page };
+/** CSS for the editor/gallery page area behind the chart card. Constant. */
+export function pageStyle(): CSSProperties {
+  return { background: CHART_PAGE_BG };
 }
 
-/** CSS chrome for the chart card (background, border, shadow, radius, blur). */
+/**
+ * CSS chrome for the chart card. The background stays constant (matching the
+ * app); the treatment still contributes its frame accents — border, shadow, and
+ * corner radius — so treatments stay distinct without changing the background.
+ */
 export function cardStyle(style: ChartStyle): CSSProperties {
   const c = TREATMENTS[treatmentOf(style)].chrome;
   const pal = style.palette?.length ? style.palette : PALETTES.signal.colors;
   const border = c.deco === "confetti" ? `3px solid ${pal[0]}` : c.border;
-  const css: CSSProperties = {
-    background: c.card,
+  return {
+    background: CHART_CARD_BG,
     borderRadius: c.cardRadius,
     border: border === "none" ? undefined : border,
     boxShadow: c.shadow === "none" ? undefined : c.shadow,
   };
-  if (c.backdropBlur) css.backdropFilter = `blur(${c.backdropBlur}px)`;
-  return css;
 }
 
 /* ------------------------------------------------------------------ */

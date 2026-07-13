@@ -37,16 +37,18 @@ describe("Chart Treatment System", () => {
     expect(s.treatment).toBe("studioFlat");
     expect(s.paletteName).toBe("signal");
     expect(treatmentOf(s)).toBe("studioFlat");
-    expect(cardBg(s)).toBe("#F3F3F5");
+    // Background behind the chart is constant across treatments (matches the app).
+    expect(cardBg()).toBe("#fffdf8");
   });
 
   it("applyTreatment records the key; applyPalette swaps colors", () => {
     let s = defaultChartStyle();
     s = applyTreatment(s, "gradientGlow");
     expect(s.treatment).toBe("gradientGlow");
+    // The treatment still flips its dark chrome flag…
     expect(TREATMENTS[treatmentOf(s)].chrome.dark).toBe(true);
-    // dark treatment uses a solid card bg approximation
-    expect(cardBg(s)).toBe("#1B1526");
+    // …but the rendered background stays constant regardless of treatment.
+    expect(cardBg()).toBe("#fffdf8");
     s = applyPalette(s, "forest");
     expect(s.paletteName).toBe("forest");
     expect(s.palette).toEqual(PALETTES.forest.colors);

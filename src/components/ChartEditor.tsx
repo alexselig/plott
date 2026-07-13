@@ -11,7 +11,7 @@ import StylePanel from "@/components/StylePanel";
 import ChartSVG from "@/lib/charts/ChartSVG";
 import { CHART_CATALOG, CHART_GROUP_LABELS, type ChartGroup } from "@/lib/charts/catalog";
 import { sampleFor } from "@/lib/charts/sample";
-import { cardStyle, pageStyle, PALETTES, TREATMENTS, isPaletteKey, treatmentOf } from "@/lib/charts/styles";
+import { cardStyle, CHART_LABEL_COLOR, CHART_TITLE_COLOR, pageStyle, PALETTES, TREATMENTS, isPaletteKey, treatmentOf } from "@/lib/charts/styles";
 import { exportPng, exportSvg } from "@/lib/export/svg";
 import { exportChartToPptx, MissingSourceError } from "@/lib/pptx/exportPptx";
 import { addPreview, commitVersion, createDocument, getVersion, newChartId, nowIso } from "@/lib/id";
@@ -135,7 +135,6 @@ export default function ChartEditor({
   const badge = showBadge ? `${doc.id} · v${exportVersion}` : undefined;
   const transparent = !!spec.style.transparentBackground;
   const treatment = treatmentOf(spec.style);
-  const chrome = TREATMENTS[treatment].chrome;
 
   const paletteKey = spec.style.paletteName ?? "signal";
   const subtitle =
@@ -402,12 +401,12 @@ export default function ChartEditor({
         </div>
 
         {/* canvas */}
-        <div className="flex flex-1 flex-col items-center justify-center p-[34px]" style={pageStyle(spec.style)}>
+        <div className="flex flex-1 flex-col items-center justify-center p-[34px]" style={pageStyle()}>
           <div className="w-full max-w-[640px]" style={{ ...cardStyle(spec.style), padding: "26px 26px 20px" }}>
-            <div className="plott-serif mb-1 text-[22px]" style={{ color: chrome.dark ? "#f0eef5" : "#221f1a" }}>
+            <div className="plott-serif mb-1 text-[22px]" style={{ color: CHART_TITLE_COLOR }}>
               {spec.title}
             </div>
-            <div className="plott-mono mb-3.5 text-[10px] uppercase tracking-[0.1em]" style={{ color: chrome.labelColor }}>
+            <div className="plott-mono mb-3.5 text-[10px] uppercase tracking-[0.1em]" style={{ color: CHART_LABEL_COLOR }}>
               {subtitle}
             </div>
             <div className={`h-[330px] ${transparent ? "cf-checkerboard rounded-md" : ""}`}>
@@ -423,7 +422,7 @@ export default function ChartEditor({
               />
             </div>
           </div>
-          <div className="plott-mono mt-4 text-[11px]" style={{ color: chrome.dark ? "rgba(255,255,255,.55)" : "#a49a88" }}>
+          <div className="plott-mono mt-4 text-[11px]" style={{ color: "#a49a88" }}>
             ↕ Drag the bars to adjust values, or edit the table →
           </div>
         </div>
