@@ -69,10 +69,28 @@ try {
   await deckBtn.waitFor({ timeout: 8000 });
   ok("import offers whole-deck edit for 2 charts", true);
 
+  // Clicking "Edit whole deck" drops you straight into editing chart 1.
   await deckBtn.click();
+  await page.waitForURL(/\/editor/, { timeout: 8000 });
+  await page.getByText("Chart 1 of 2").waitFor({ timeout: 8000 });
+  ok("guided flow starts at chart 1 of 2", true);
+
+  const next = page.getByRole("button", { name: /Save & next chart/i });
+  await next.waitFor({ timeout: 8000 });
+  ok("editor shows 'Save & next chart' (not export) in deck mode", true);
+
+  // Advance to chart 2.
+  await next.click();
+  await page.getByText("Chart 2 of 2").waitFor({ timeout: 8000 });
+  const finish = page.getByRole("button", { name: /Save & finish/i });
+  await finish.waitFor({ timeout: 8000 });
+  ok("last chart shows 'Save & finish'", true);
+
+  // Finishing the last chart returns to the deck overview.
+  await finish.click();
   await page.waitForURL(/\/deck/, { timeout: 8000 });
   await page.getByRole("button", { name: "Export deck to PowerPoint" }).waitFor({ timeout: 8000 });
-  ok("deck page shows both charts", (await page.getByText("Revenue").count()) >= 1 && (await page.getByText("Signups").count()) >= 1);
+  ok("finishing returns to the deck overview", (await page.getByText("Revenue").count()) >= 1 && (await page.getByText("Signups").count()) >= 1);
 
   const [download] = await Promise.all([
     page.waitForEvent("download", { timeout: 12000 }),

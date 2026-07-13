@@ -111,7 +111,9 @@ export default function PptxImport() {
       }
       const ts = new Date().toISOString();
       await saveDeck({ id, name, fileName, sourceToken, slideSize: read.slideSize, chartIds, createdAt: ts, updatedAt: ts });
-      router.push(`/deck?id=${id}`);
+      // Start the guided flow at the first chart; finishing the last one returns
+      // to the deck overview (/deck).
+      router.push(`/editor?id=${chartIds[0]}`);
     } catch {
       setBuilding(false);
       setNote("Couldn't build the deck. Try again.");

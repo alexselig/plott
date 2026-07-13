@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import ChartGlyph from "@/components/ChartGlyph";
 import PlottDataTab from "@/components/PlottDataTab";
@@ -18,6 +19,7 @@ import { addPreview, commitVersion, createDocument, getVersion, newChartId, nowI
 import { dhashFromSvg } from "@/lib/phash";
 import { CORE_KINDS, PLOTT_TYPES, typeDisplayName } from "@/lib/plott/mapping";
 import { getDocument, saveDocument } from "@/lib/store/db";
+import { getDeck } from "@/lib/store/deck";
 import type { ChartDocument, ChartKind, ChartSpec, DataTable, PptxOrigin } from "@/lib/types";
 
 const NEW_ID = "PLT-NEW";
@@ -66,7 +68,9 @@ export default function ChartEditor({
   const [showMore, setShowMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pptxError, setPptxError] = useState<string | null>(null);
+  const [deckNav, setDeckNav] = useState<{ deckId: string; index: number; total: number; nextId: string | null } | null>(null);
   const exportRef = useRef<SVGSVGElement>(null);
+  const router = useRouter();
 
   // Mint a real id on the client for brand-new charts (SSR uses a placeholder).
   useEffect(() => {
@@ -122,6 +126,32 @@ export default function ChartEditor({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // When the chart belongs to a deck, load the deck sequence for the guided
+  // "edit each chart, then next" flow.
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- syncing deck nav from the loaded doc */
+    if (!doc.deckId) {
+      setDeckNav(null);
+      return;
+    }
+    let cancelled = false;
+    getDeck(doc.deckId).then((d) => {
+      if (!d || cancelled) return;
+      const index = d.chartIds.indexOf(doc.id);
+      if (index === -1) return;
+      setDeckNav({
+        deckId: d.id,
+        index,
+        total: d.chartIds.length,
+        nextId: index + 1 < d.chartIds.length ? d.chartIds[index + 1] : null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [doc.deckId, doc.id]);
 
   const committed = getVersion(doc);
   const dirty = useMemo(
@@ -221,6 +251,17 @@ export default function ChartEditor({
     }
   }
 
+  async function onNextChart() {
+    const target = dirty ? commit() : doc;
+    try {
+      await saveDocument(target); // ensure this chart's edits persist before leaving
+    } catch {
+      /* best-effort; navigation still proceeds */
+    }
+    if (!deckNav) return;
+    router.push(deckNav.nextId ? `/editor?id=${deckNav.nextId}` : `/deck?id=${deckNav.deckId}`);
+  }
+
   const extra = CHART_CATALOG.filter((c) => !CORE_KINDS.includes(c.kind));
 
   return (
@@ -251,7 +292,22 @@ export default function ChartEditor({
           >
             ◻ Preview on slide
           </button>
-          {doc.origin && (
+          {deckNav ? (
+            <>
+              <span className="plott-mono text-[11px] text-muted">
+                Chart {deckNav.index + 1} of {deckNav.total}
+              </span>
+              <button
+                type="button"
+                onClick={onNextChart}
+                disabled={busy}
+                title={deckNav.nextId ? "Save this chart and edit the next one" : "Save this chart and return to the deck overview"}
+                className="rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {deckNav.nextId ? "Save & next chart →" : "Save & finish ✓"}
+              </button>
+            </>
+          ) : doc.origin ? (
             <button
               type="button"
               onClick={onPptx}
@@ -261,13 +317,13 @@ export default function ChartEditor({
             >
               {busy ? "Placing…" : "Export to PowerPoint"}
             </button>
-          )}
+          ) : null}
           <button
             type="button"
             onClick={onPng}
             disabled={busy}
             className={
-              doc.origin
+              deckNav || doc.origin
                 ? "rounded-md border border-border bg-panel px-4 py-2.5 text-[13px] font-medium text-ink hover:border-accent disabled:opacity-50"
                 : "rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
             }
