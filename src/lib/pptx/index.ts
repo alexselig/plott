@@ -25,5 +25,6 @@ export function readPptx(bytes: Uint8Array): PptxReadResult {
     slideSize: raw.slideSize,
     charts: raw.charts.map(toExtractedChart),
     overlays: raw.overlays,
+    palette: raw.themePalette,
   };
 }

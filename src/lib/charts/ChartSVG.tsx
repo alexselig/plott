@@ -260,8 +260,9 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
   const series = seriesList(data, spec);
   const isPie = PIE_KINDS.includes(kind);
   const isCartesian = CARTESIAN.includes(kind);
-  const showLegend = spec.style.showLegend && series.length > 1;
   const compact = !!spec.style.hideAxisLabels;
+  // Legends are omitted from compact thumbnails (they overlap at small sizes).
+  const showLegend = spec.style.showLegend && series.length > 1 && !compact;
   const header = compact ? 8 : 28 + (showLegend ? 18 : 0);
 
   const svgProps = {

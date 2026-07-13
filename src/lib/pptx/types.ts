@@ -55,6 +55,8 @@ export interface PptxReadResult {
   slideSize: SlideSize;
   charts: ExtractedChart[];
   overlays: PlacedOverlay[];
+  /** Theme accent colors pulled from the deck (its default color set). */
+  palette: string[];
 }
 
 /** What `chartToPlott` produces from an extracted chart. */

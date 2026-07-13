@@ -51,15 +51,36 @@ export default function StylePanel({
     ? (style.paletteName as PaletteKey)
     : "signal";
   const activeTreatment = treatmentOf(style);
+  const imported = style.importedPalette;
+  const importedActive = style.paletteName === "imported";
 
   return (
     <div>
       {/* palette row */}
       <div className="mb-[18px] border-b border-rule pb-4">
         <div className="plott-mono mb-2 text-[10px] uppercase tracking-[0.12em] text-faint">Palette</div>
+        {imported && imported.length >= 2 && (
+          <button
+            type="button"
+            aria-label="Palette From PowerPoint"
+            onClick={() =>
+              onChange({ ...style, palette: [...imported], paletteName: "imported" })
+            }
+            className={`mb-2 flex w-full items-center gap-2 rounded-md border px-2 py-1.5 ${
+              importedActive ? "border-accent bg-[#f0ddd5]" : "border-rule bg-panel hover:border-border"
+            }`}
+          >
+            <span className="flex flex-none gap-0.5">
+              {imported.slice(0, 6).map((c, i) => (
+                <span key={i} className="h-3 w-3 rounded-[2px]" style={{ background: c }} />
+              ))}
+            </span>
+            <span className="truncate text-[12px] text-ink">From PowerPoint</span>
+          </button>
+        )}
         <div className="grid grid-cols-2 gap-2">
           {PALETTE_ORDER.map((k) => {
-            const active = paletteKey === k;
+            const active = !importedActive && paletteKey === k;
             return (
               <button
                 key={k}

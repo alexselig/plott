@@ -14,9 +14,18 @@ import { getDocument, saveDocument } from "@/lib/store/db";
 import { newDeckId, saveDeck } from "@/lib/store/deck";
 import { saveSource } from "@/lib/store/pptxSource";
 import type { ExtractedChart, PlacedOverlay, PptxReadResult, SlideSize } from "@/lib/pptx";
-import type { PptxOrigin } from "@/lib/types";
+import type { ChartSpec, PptxOrigin } from "@/lib/types";
 
 type Phase = "upload" | "reading" | "review" | "error";
+
+/** Apply the deck's PowerPoint color set as the chart's default palette. */
+function withImportedPalette(spec: ChartSpec, palette: string[]): ChartSpec {
+  if (palette.length < 2) return spec;
+  return {
+    ...spec,
+    style: { ...spec.style, palette: [...palette], paletteName: "imported", importedPalette: [...palette] },
+  };
+}
 
 export default function PptxImport() {
   const router = useRouter();
@@ -64,7 +73,7 @@ export default function PptxImport() {
     try {
       const sourceToken = await saveSource(fileName, bytes);
       const payload = {
-        spec: ex.spec,
+        spec: withImportedPalette(ex.spec, result?.palette ?? []),
         data: ex.data,
         title: ex.title,
         origin: {
@@ -105,12 +114,27 @@ export default function PptxImport() {
           rect: ex.rect,
           slideSize: read.slideSize,
         };
-        const doc = { ...createDocument(ex.spec, ex.data, ex.title), origin, deck: name, deckId: id };
+        const doc = {
+          ...createDocument(withImportedPalette(ex.spec, read.palette), ex.data, ex.title),
+          origin,
+          deck: name,
+          deckId: id,
+        };
         await saveDocument(doc);
         chartIds.push(doc.id);
       }
       const ts = new Date().toISOString();
-      await saveDeck({ id, name, fileName, sourceToken, slideSize: read.slideSize, chartIds, createdAt: ts, updatedAt: ts });
+      await saveDeck({
+        id,
+        name,
+        fileName,
+        sourceToken,
+        slideSize: read.slideSize,
+        chartIds,
+        palette: read.palette.length >= 2 ? read.palette : undefined,
+        createdAt: ts,
+        updatedAt: ts,
+      });
       // Start the guided flow at the first chart; finishing the last one returns
       // to the deck overview (/deck).
       router.push(`/editor?id=${chartIds[0]}`);

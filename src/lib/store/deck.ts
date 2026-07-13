@@ -1,6 +1,6 @@
 import { openDB, type IDBPDatabase } from "idb";
 
-import type { SlideSize } from "@/lib/types";
+import type { ChartStyle, SlideSize } from "@/lib/types";
 
 /**
  * A Deck groups every chart imported from one PowerPoint presentation, so they
@@ -19,6 +19,11 @@ export interface Deck {
   slideSize: SlideSize;
   /** Ordered ChartDocument ids belonging to this deck. */
   chartIds: string[];
+  /** Color set pulled from the presentation (theme accents), the deck default. */
+  palette?: string[];
+  /** The most-recent style chosen while editing the deck; inherited by charts
+   *  the user hasn't styled yet, so a choice on one chart carries to the next. */
+  workingStyle?: ChartStyle;
   createdAt: string;
   updatedAt: string;
 }

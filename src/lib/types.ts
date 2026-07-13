@@ -92,6 +92,8 @@ export interface ChartStyle {
   /** Selected palette/style names (for the theme picker UI). */
   paletteName?: string;
   styleName?: string;
+  /** Color set pulled from an imported PowerPoint (offered in the picker). */
+  importedPalette?: string[];
   /** Selected visual treatment key (the 13-treatment system). */
   treatment?: string;
   /** Per-slot color overrides keyed by color index (series index, or category
@@ -179,6 +181,9 @@ export interface ChartDocument {
   deck?: string;
   /** Id of the Deck (in the deck store) this chart belongs to, if any. */
   deckId?: string;
+  /** True once the user has customized this chart's style (so the deck's
+   *  inherited "working style" no longer overrides it). */
+  styled?: boolean;
   /** Perceptual (dHash) fingerprints of exported images, per version, for
    *  copy/paste-robust re-open matching. */
   previews?: { version: number; hash: string }[];

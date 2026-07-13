@@ -19,7 +19,7 @@ import { addPreview, commitVersion, createDocument, getVersion, newChartId, nowI
 import { dhashFromSvg } from "@/lib/phash";
 import { CORE_KINDS, PLOTT_TYPES, typeDisplayName } from "@/lib/plott/mapping";
 import { getDocument, saveDocument } from "@/lib/store/db";
-import { getDeck } from "@/lib/store/deck";
+import { getDeck, saveDeck } from "@/lib/store/deck";
 import type { ChartDocument, ChartKind, ChartSpec, DataTable, PptxOrigin } from "@/lib/types";
 
 const NEW_ID = "PLT-NEW";
@@ -68,7 +68,7 @@ export default function ChartEditor({
   const [showMore, setShowMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pptxError, setPptxError] = useState<string | null>(null);
-  const [deckNav, setDeckNav] = useState<{ deckId: string; index: number; total: number; nextId: string | null } | null>(null);
+  const [deckNav, setDeckNav] = useState<{ deckId: string; index: number; total: number; prevId: string | null; nextId: string | null } | null>(null);
   const exportRef = useRef<SVGSVGElement>(null);
   const router = useRouter();
 
@@ -144,14 +144,20 @@ export default function ChartEditor({
         deckId: d.id,
         index,
         total: d.chartIds.length,
+        prevId: index > 0 ? d.chartIds[index - 1] : null,
         nextId: index + 1 < d.chartIds.length ? d.chartIds[index + 1] : null,
       });
+      // Inherit the deck's working style on charts the user hasn't styled yet,
+      // so a style chosen on one chart carries forward to the next.
+      if (!doc.styled && d.workingStyle) {
+        setSpec((s) => ({ ...s, style: structuredClone(d.workingStyle!) }));
+      }
     });
     return () => {
       cancelled = true;
     };
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [doc.deckId, doc.id]);
+  }, [doc.deckId, doc.id, doc.styled]);
 
   const committed = getVersion(doc);
   const dirty = useMemo(
@@ -168,10 +174,12 @@ export default function ChartEditor({
   const chrome = TREATMENTS[treatment].chrome;
 
   const paletteKey = spec.style.paletteName ?? "signal";
+  const paletteLabel =
+    paletteKey === "imported" ? "From PowerPoint" : isPaletteKey(paletteKey) ? PALETTES[paletteKey].name : "";
   const subtitle =
     typeDisplayName(spec.kind) +
     ` · ${TREATMENTS[treatment].name}` +
-    (isPaletteKey(paletteKey) ? ` · ${PALETTES[paletteKey].name}` : "");
+    (paletteLabel ? ` · ${paletteLabel}` : "");
 
   function editValue(key: string, row: number, value: number) {
     setData((d) => ({ ...d, rows: d.rows.map((r, i) => (i === row ? { ...r, [key]: value } : r)) }));
@@ -251,15 +259,30 @@ export default function ChartEditor({
     }
   }
 
-  async function onNextChart() {
-    const target = dirty ? commit() : doc;
+  async function saveAndGo(target: string) {
+    const saved = dirty ? commit() : doc;
     try {
-      await saveDocument(target); // ensure this chart's edits persist before leaving
+      // Mark this chart styled (so it keeps its look) and persist its edits.
+      await saveDocument({ ...saved, styled: true });
+      // Remember the chosen style as the deck's working style for later charts.
+      if (deckNav) {
+        const d = await getDeck(deckNav.deckId);
+        if (d) await saveDeck({ ...d, workingStyle: structuredClone(spec.style), updatedAt: nowIso() });
+      }
     } catch {
       /* best-effort; navigation still proceeds */
     }
+    router.push(target);
+  }
+
+  async function onNextChart() {
     if (!deckNav) return;
-    router.push(deckNav.nextId ? `/editor?id=${deckNav.nextId}` : `/deck?id=${deckNav.deckId}`);
+    await saveAndGo(deckNav.nextId ? `/editor?id=${deckNav.nextId}` : `/deck?id=${deckNav.deckId}`);
+  }
+
+  async function onPrevChart() {
+    if (!deckNav?.prevId) return;
+    await saveAndGo(`/editor?id=${deckNav.prevId}`);
   }
 
   const extra = CHART_CATALOG.filter((c) => !CORE_KINDS.includes(c.kind));
@@ -299,6 +322,15 @@ export default function ChartEditor({
               </span>
               <button
                 type="button"
+                onClick={onPrevChart}
+                disabled={busy || !deckNav.prevId}
+                title="Save this chart and go back to the previous one"
+                className="rounded-md border border-border bg-panel px-4 py-2.5 text-[13px] font-medium text-ink hover:border-accent disabled:opacity-40"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
                 onClick={onNextChart}
                 disabled={busy}
                 title={deckNav.nextId ? "Save this chart and edit the next one" : "Save this chart and return to the deck overview"}
@@ -307,29 +339,33 @@ export default function ChartEditor({
                 {deckNav.nextId ? "Save & next chart →" : "Save & finish ✓"}
               </button>
             </>
-          ) : doc.origin ? (
-            <button
-              type="button"
-              onClick={onPptx}
-              disabled={busy}
-              title={`Place this chart onto slide ${doc.origin.slideIndex + 1} of ${doc.origin.fileName}`}
-              className="rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-            >
-              {busy ? "Placing…" : "Export to PowerPoint"}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={onPng}
-            disabled={busy}
-            className={
-              deckNav || doc.origin
-                ? "rounded-md border border-border bg-panel px-4 py-2.5 text-[13px] font-medium text-ink hover:border-accent disabled:opacity-50"
-                : "rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-            }
-          >
-            {busy ? "Exporting…" : "Export PNG"}
-          </button>
+          ) : (
+            <>
+              {doc.origin && (
+                <button
+                  type="button"
+                  onClick={onPptx}
+                  disabled={busy}
+                  title={`Place this chart onto slide ${doc.origin.slideIndex + 1} of ${doc.origin.fileName}`}
+                  className="rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+                >
+                  {busy ? "Placing…" : "Export to PowerPoint"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onPng}
+                disabled={busy}
+                className={
+                  doc.origin
+                    ? "rounded-md border border-border bg-panel px-4 py-2.5 text-[13px] font-medium text-ink hover:border-accent disabled:opacity-50"
+                    : "rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+                }
+              >
+                {busy ? "Exporting…" : "Export PNG"}
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setShowMenu((m) => !m)}
@@ -340,6 +376,19 @@ export default function ChartEditor({
           </button>
           {showMenu && (
             <div className="absolute right-0 top-[46px] z-30 w-56 rounded-lg border border-rule bg-panel p-1.5 shadow-lg">
+              {deckNav && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onPng();
+                    setShowMenu(false);
+                  }}
+                  disabled={busy}
+                  className="block w-full rounded px-3 py-2 text-left text-[13px] hover:bg-rail disabled:opacity-40"
+                >
+                  Export PNG
+                </button>
+              )}
               <button type="button" onClick={onSvg} className="block w-full rounded px-3 py-2 text-left text-[13px] hover:bg-rail">
                 Export SVG
               </button>

@@ -64,6 +64,8 @@ export interface RawReadResult {
   slideSize: SlideSize;
   charts: RawChart[];
   overlays: PlacedOverlay[];
+  /** Theme accent colors (accent1–6) — the presentation's color set. */
+  themePalette: string[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -154,6 +156,29 @@ export function resolvePath(baseDir: string, target: string): string {
     else if (seg !== ".") parts.push(seg);
   }
   return parts.join("/");
+}
+
+/** Read a hex color from an `a:srgbClr`/`a:sysClr` color node. */
+function readColorNode(node: unknown): string | null {
+  const srgb = attr(child(node, "a:srgbClr"), "val");
+  if (srgb) return `#${srgb.toUpperCase()}`;
+  const sys = attr(child(node, "a:sysClr"), "lastClr");
+  if (sys) return `#${sys.toUpperCase()}`;
+  return null;
+}
+
+/** Parse the theme's accent1–6 colors (the presentation's color set). */
+export function parseThemeAccents(xml: string): string[] {
+  const doc = parseXml(xml);
+  const theme = child(doc, "a:theme") ?? doc;
+  const scheme = child(child(theme, "a:themeElements"), "a:clrScheme");
+  if (!scheme) return [];
+  const out: string[] = [];
+  for (let i = 1; i <= 6; i++) {
+    const c = readColorNode(child(scheme, `a:accent${i}`));
+    if (c) out.push(c);
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -507,6 +532,8 @@ export function readPptxRaw(bytes: Uint8Array): RawReadResult {
     : { cx: 12192000, cy: 6858000 };
 
   const slidePaths = orderedSlidePaths(files);
+  const themeBytes = files["ppt/theme/theme1.xml"];
+  const themePalette = themeBytes ? parseThemeAccents(strFromU8(themeBytes)) : [];
   const charts: RawChart[] = [];
   const overlays: PlacedOverlay[] = [];
 
@@ -562,5 +589,5 @@ export function readPptxRaw(bytes: Uint8Array): RawReadResult {
     }
   });
 
-  return { slideSize, charts, overlays };
+  return { slideSize, charts, overlays, themePalette };
 }

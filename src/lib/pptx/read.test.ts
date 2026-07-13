@@ -11,6 +11,7 @@ import {
   parsePresentation,
   parseRels,
   parseSlideCharts,
+  parseThemeAccents,
   readPptxRaw,
   resolvePath,
 } from "@/lib/pptx/read";
@@ -272,6 +273,38 @@ describe("readPptxRaw (full archive)", () => {
 /* ------------------------------------------------------------------ */
 /* Embedded-workbook fallback (chart XML with no cached values).       */
 /* ------------------------------------------------------------------ */
+
+describe("parseThemeAccents", () => {
+  it("reads accent1–6 from srgbClr and sysClr", () => {
+    const xml = `<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme name="Office">
+      <a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1>
+      <a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>
+      <a:accent1><a:srgbClr val="4472C4"/></a:accent1>
+      <a:accent2><a:srgbClr val="ED7D31"/></a:accent2>
+      <a:accent3><a:srgbClr val="A5A5A5"/></a:accent3>
+      <a:accent4><a:srgbClr val="FFC000"/></a:accent4>
+      <a:accent5><a:srgbClr val="5B9BD5"/></a:accent5>
+      <a:accent6><a:srgbClr val="70AD47"/></a:accent6>
+    </a:clrScheme></a:themeElements></a:theme>`;
+    expect(parseThemeAccents(xml)).toEqual(["#4472C4", "#ED7D31", "#A5A5A5", "#FFC000", "#5B9BD5", "#70AD47"]);
+  });
+
+  it("returns empty when there is no color scheme", () => {
+    expect(parseThemeAccents(`<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>`)).toEqual([]);
+  });
+});
+
+describe("readPptxRaw theme palette", () => {
+  it("pulls the theme accent palette from the deck", () => {
+    const files: Record<string, Uint8Array> = {
+      "ppt/presentation.xml": strToU8(`<p:presentation ${P} ${R}><p:sldIdLst/><p:sldSz cx="1" cy="1"/></p:presentation>`),
+      "ppt/theme/theme1.xml": strToU8(
+        `<a:theme ${A}><a:themeElements><a:clrScheme name="X"><a:accent1><a:srgbClr val="112233"/></a:accent1><a:accent2><a:srgbClr val="445566"/></a:accent2></a:clrScheme></a:themeElements></a:theme>`,
+      ),
+    };
+    expect(readPptxRaw(zipSync(files)).themePalette).toEqual(["#112233", "#445566"]);
+  });
+});
 
 describe("parseFormulaRange", () => {
   it("splits a sheet-qualified A1 range", () => {
