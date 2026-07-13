@@ -185,43 +185,67 @@ export function treatmentOf(style: ChartStyle): TreatmentKey {
 }
 
 /* ------------------------------------------------------------------ */
-/* Constant chart background (matches the app, regardless of treatment) */
+/* Page background stays constant (the app color); the card keeps its   */
+/* full treatment — including dark themes and decorations.              */
 /* ------------------------------------------------------------------ */
 
-/** App page background behind the chart card (`--paper`). */
+/** Constant app page background behind the chart card (`--paper`). */
 export const CHART_PAGE_BG = "#f5f0e6";
-/** App card background directly behind the chart (`--panel`). */
-export const CHART_CARD_BG = "#fffdf8";
-/** Axis/label color that reads on the constant card background. */
-export const CHART_LABEL_COLOR = "#8a8578";
-/** Title color that reads on the constant card background (`--ink`-ish). */
-export const CHART_TITLE_COLOR = "#221f1a";
 
-/**
- * The solid background the chart SVG paints. Kept constant across treatments so
- * changing the style never changes the background behind the chart — only the
- * marks (and the card's frame accents) change.
- */
-export function cardBg(): string {
-  return CHART_CARD_BG;
+/** The solid background color the chart SVG paints (the treatment's card). */
+export function cardBg(style: ChartStyle): string {
+  const c = TREATMENTS[treatmentOf(style)].chrome;
+  return c.cardSolid ?? c.card;
 }
 
-/** CSS for the editor/gallery page area behind the chart card. Constant. */
+/**
+ * CSS for the editor/gallery area *behind* the chart card. Constant (the app
+ * color), so switching chart styles never changes the app background — only the
+ * card (the chart canvas) reflects the treatment.
+ */
 export function pageStyle(): CSSProperties {
   return { background: CHART_PAGE_BG };
 }
 
+/** The card's background, including any treatment decoration drawn behind the chart. */
+function cardBackground(c: Chrome, pal: string[]): CSSProperties {
+  const base = c.cardSolid ?? c.card;
+  if (c.deco === "blueprintGrid")
+    return {
+      backgroundColor: base,
+      backgroundImage:
+        "linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px)",
+      backgroundSize: "22px 22px",
+    };
+  if (c.deco === "halftoneDots")
+    return {
+      backgroundColor: base,
+      backgroundImage: "radial-gradient(rgba(0,0,0,.09) 1px, transparent 1px)",
+      backgroundSize: "11px 11px",
+    };
+  if (c.deco === "frostedBlobs") {
+    const blob = (hex: string, x: string, y: string) =>
+      `radial-gradient(circle at ${x} ${y}, ${lighten(hex, 0.3)}66, transparent 55%)`;
+    return {
+      backgroundColor: base,
+      backgroundImage: [blob(pal[0], "20%", "26%"), blob(pal[1], "80%", "22%"), blob(pal[2], "55%", "82%")].join(","),
+    };
+  }
+  // Use the solid card color — translucent cards were designed to sit on a dark
+  // treatment page, but the page is now the constant app color.
+  return { background: base };
+}
+
 /**
- * CSS chrome for the chart card. The background stays constant (matching the
- * app); the treatment still contributes its frame accents — border, shadow, and
- * corner radius — so treatments stay distinct without changing the background.
+ * CSS chrome for the chart card (the chart canvas): the treatment's background
+ * (dark themes + decorations), border, shadow, corner radius, and blur.
  */
 export function cardStyle(style: ChartStyle): CSSProperties {
   const c = TREATMENTS[treatmentOf(style)].chrome;
   const pal = style.palette?.length ? style.palette : PALETTES.signal.colors;
   const border = c.deco === "confetti" ? `3px solid ${pal[0]}` : c.border;
   return {
-    background: CHART_CARD_BG,
+    ...cardBackground(c, pal),
     borderRadius: c.cardRadius,
     border: border === "none" ? undefined : border,
     boxShadow: c.shadow === "none" ? undefined : c.shadow,

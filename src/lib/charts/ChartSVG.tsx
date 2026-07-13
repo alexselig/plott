@@ -11,7 +11,7 @@ import { effectiveColor, resolvedPalette } from "@/lib/charts/colors";
 import { dragToValue, snapToHalf } from "@/lib/charts/interact";
 import { barRadius, paintArea, paintFilledMark, paintLine, paintPoint, treatmentDefs, type ShapeFn } from "@/lib/charts/paint";
 import { EXTRA_KINDS, renderExtra } from "@/lib/charts/renderExtra";
-import { cardBg, CHART_LABEL_COLOR, CHART_TITLE_COLOR, treatmentOf } from "@/lib/charts/styles";
+import { cardBg, TREATMENTS, treatmentOf } from "@/lib/charts/styles";
 import { FONT, fmt } from "@/lib/charts/theme";
 import type { ChartKind, ChartSpec, DataTable } from "@/lib/types";
 
@@ -245,12 +245,13 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
   const color = (i: number) => effectiveColor(spec, i);
   const curveFn = spec.style.curve === "smooth" ? curveCatmullRom.alpha(0.5) : curveLinear;
   const T = treatmentOf(spec.style);
+  const chrome = TREATMENTS[T].chrome;
   const s = width / 200; // treatment lengths are authored in a 200-wide viewBox
-  const bg = cardBg();
+  const bg = cardBg(spec.style);
   const bgColor = bg;
   const labelFont = FONT;
-  const labelColor = CHART_LABEL_COLOR;
-  const titleColor = CHART_TITLE_COLOR;
+  const labelColor = chrome.labelColor;
+  const titleColor = chrome.dark ? "#e9e6f2" : "#2a2722";
   const defs = treatmentDefs(T, palette, s, idp);
   const barFrac = 0.66;
   const pointR = 2.6 * s;
