@@ -68,16 +68,26 @@ try {
   await page.setInputFiles('input[type="file"]', fixture);
 
   // 2. Review shows the detected chart.
-  const card = page.getByRole("button", { name: /Import .* from slide 1/i });
+  const card = page.getByRole("button", { name: /Edit .* from slide 1/i });
   await card.waitFor({ timeout: 8000 });
   ok("review lists the imported chart", await card.count() >= 1);
   ok("chart title is read from the deck", (await page.getByText("Revenue by region").count()) >= 1);
 
-  // 3. Open in the editor.
+  // 3. Open in the editor (single chart from a presentation).
   await card.first().click();
   await page.waitForURL(/\/editor/, { timeout: 8000 });
   await page.getByRole("button", { name: "Export to PowerPoint" }).waitFor({ timeout: 8000 });
   ok("editor shows Export to PowerPoint", true);
+  // Single-chart-from-deck mode: "Done" is the primary action…
+  await page.getByRole("button", { name: /^Done/ }).waitFor({ timeout: 8000 });
+  ok("editor shows Done (single-chart-from-deck mode)", true);
+  // …and "Export PNG" is not a top-bar button (it lives in the overflow menu).
+  ok("Export PNG is not a top-bar button", (await page.getByRole("button", { name: "Export PNG" }).count()) === 0);
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("button", { name: "Export PNG" }).waitFor({ timeout: 4000 });
+  ok("Export PNG is available in the overflow menu", true);
+  // Close the overflow menu before continuing.
+  await page.getByRole("button", { name: "More actions" }).click();
   // categories from the deck made it into the chart
   await page.getByText("North", { exact: false }).first().waitFor({ timeout: 8000 });
   ok("imported categories render in the editor", true);
@@ -102,6 +112,11 @@ try {
   ok("original native chart is preserved", /<p:graphicFrame>/.test(slide));
   const rels = strFromU8(out["ppt/slides/_rels/slide1.xml.rels"]);
   ok("overlay carries an editor hyperlink", /relationships\/hyperlink/.test(rels) && /app\/plott\/editor/.test(rels));
+
+  // 6. "Done" saves and returns to this presentation's chart gallery (/deck).
+  await page.getByRole("button", { name: /^Done/ }).click();
+  await page.waitForURL(/\/deck/, { timeout: 8000 });
+  ok("Done returns to the presentation's chart gallery", /\/deck/.test(page.url()));
 } catch (e) {
   fail++;
   console.log("FAIL  exception —", e.message);

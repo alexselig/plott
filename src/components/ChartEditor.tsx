@@ -39,11 +39,13 @@ export default function ChartEditor({
   initialKind,
   source = "sample",
   initialVersion,
+  deckFlow = false,
 }: {
   chartId: string;
   initialKind: ChartKind;
   source?: "sample" | "pending";
   initialVersion?: number;
+  deckFlow?: boolean;
 }) {
   const [doc, setDoc] = useState<ChartDocument>(() => {
     const { spec, data } = sampleFor(initialKind);
@@ -172,6 +174,13 @@ export default function ChartEditor({
   const transparent = !!spec.style.transparentBackground;
   const exportSize = doc.origin ? slideRenderSize(doc.origin.rect) : { width: 760, height: 460 };
   const treatment = treatmentOf(spec.style);
+  // Deck editing modes: "guided" = the whole-deck next/next flow (entered with
+  // ?flow=deck); "singleFromDeck" = editing one chart that belongs to a
+  // presentation (Done returns to its gallery). Classify by intent so we don't
+  // flash the wrong toolbar while the deck sequence loads asynchronously.
+  const guidedIntent = deckFlow && !!doc.deckId;
+  const singleFromDeck = !!doc.deckId && !guidedIntent;
+  const pngInMenu = !!doc.deckId;
 
   const paletteKey = spec.style.paletteName ?? "signal";
   const paletteLabel =
@@ -277,12 +286,17 @@ export default function ChartEditor({
 
   async function onNextChart() {
     if (!deckNav) return;
-    await saveAndGo(deckNav.nextId ? `/editor?id=${deckNav.nextId}` : `/deck?id=${deckNav.deckId}`);
+    await saveAndGo(deckNav.nextId ? `/editor?id=${deckNav.nextId}&flow=deck` : `/deck?id=${deckNav.deckId}`);
   }
 
   async function onPrevChart() {
     if (!deckNav?.prevId) return;
-    await saveAndGo(`/editor?id=${deckNav.prevId}`);
+    await saveAndGo(`/editor?id=${deckNav.prevId}&flow=deck`);
+  }
+
+  async function onDone() {
+    if (!doc.deckId) return;
+    await saveAndGo(`/deck?id=${doc.deckId}`);
   }
 
   const extra = CHART_CATALOG.filter((c) => !CORE_KINDS.includes(c.kind));
@@ -296,7 +310,7 @@ export default function ChartEditor({
             href={doc.deckId ? `/deck?id=${doc.deckId}` : "/"}
             className="plott-mono text-[13px] text-muted hover:text-accent"
           >
-            {doc.deckId ? "‹ Back to deck" : "‹ Gallery"}
+            {doc.deckId ? "‹ Back to charts" : "‹ Gallery"}
           </Link>
           <div className="h-[22px] w-px bg-rule" />
           <div className="flex min-w-0 flex-col">
@@ -318,15 +332,15 @@ export default function ChartEditor({
           >
             ◻ Preview on slide
           </button>
-          {deckNav ? (
+          {guidedIntent ? (
             <>
               <span className="plott-mono text-[11px] text-muted">
-                Chart {deckNav.index + 1} of {deckNav.total}
+                {deckNav ? `Chart ${deckNav.index + 1} of ${deckNav.total}` : "Loading…"}
               </span>
               <button
                 type="button"
                 onClick={onPrevChart}
-                disabled={busy || !deckNav.prevId}
+                disabled={busy || !deckNav?.prevId}
                 title="Save this chart and go back to the previous one"
                 className="rounded-md border border-border bg-panel px-4 py-2.5 text-[13px] font-medium text-ink hover:border-accent disabled:opacity-40"
               >
@@ -335,39 +349,63 @@ export default function ChartEditor({
               <button
                 type="button"
                 onClick={onNextChart}
-                disabled={busy}
-                title={deckNav.nextId ? "Save this chart and edit the next one" : "Save this chart and return to the deck overview"}
+                disabled={busy || !deckNav}
+                title={deckNav?.nextId ? "Save this chart and edit the next one" : "Save this chart and return to the deck overview"}
                 className="rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
               >
-                {deckNav.nextId ? "Save & next chart →" : "Save & finish ✓"}
+                {deckNav && !deckNav.nextId ? "Save & finish ✓" : "Save & next chart →"}
               </button>
             </>
-          ) : (
+          ) : singleFromDeck ? (
             <>
-              {doc.origin && (
-                <button
-                  type="button"
-                  onClick={onPptx}
-                  disabled={busy}
-                  title={`Place this chart onto slide ${doc.origin.slideIndex + 1} of ${doc.origin.fileName}`}
-                  className="rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-                >
-                  {busy ? "Placing…" : "Export to PowerPoint"}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={onPptx}
+                disabled={busy}
+                title={doc.origin ? `Place this chart onto slide ${doc.origin.slideIndex + 1} of ${doc.origin.fileName}` : undefined}
+                className="rounded-md border border-border bg-panel px-4 py-2.5 text-[13px] font-medium text-ink hover:border-accent disabled:opacity-50"
+              >
+                {busy ? "Placing…" : "Export to PowerPoint"}
+              </button>
+              <button
+                type="button"
+                onClick={onDone}
+                disabled={busy}
+                title="Save this chart and return to the presentation's charts"
+                className="rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                Done ✓
+              </button>
+            </>
+          ) : doc.origin ? (
+            <>
+              <button
+                type="button"
+                onClick={onPptx}
+                disabled={busy}
+                title={`Place this chart onto slide ${doc.origin.slideIndex + 1} of ${doc.origin.fileName}`}
+                className="rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {busy ? "Placing…" : "Export to PowerPoint"}
+              </button>
               <button
                 type="button"
                 onClick={onPng}
                 disabled={busy}
-                className={
-                  doc.origin
-                    ? "rounded-md border border-border bg-panel px-4 py-2.5 text-[13px] font-medium text-ink hover:border-accent disabled:opacity-50"
-                    : "rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
-                }
+                className="rounded-md border border-border bg-panel px-4 py-2.5 text-[13px] font-medium text-ink hover:border-accent disabled:opacity-50"
               >
                 {busy ? "Exporting…" : "Export PNG"}
               </button>
             </>
+          ) : (
+            <button
+              type="button"
+              onClick={onPng}
+              disabled={busy}
+              className="rounded-md bg-accent px-[18px] py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {busy ? "Exporting…" : "Export PNG"}
+            </button>
           )}
           <button
             type="button"
@@ -379,7 +417,7 @@ export default function ChartEditor({
           </button>
           {showMenu && (
             <div className="absolute right-0 top-[46px] z-30 w-56 rounded-lg border border-rule bg-panel p-1.5 shadow-lg">
-              {deckNav && (
+              {pngInMenu && (
                 <button
                   type="button"
                   onClick={() => {

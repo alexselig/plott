@@ -22,6 +22,7 @@ export default function EditorLoader() {
   const vParam = sp.get("v");
   const v = vParam ? Number(vParam) : undefined;
   const initialVersion = v && Number.isFinite(v) ? v : undefined;
+  const deckFlow = sp.get("flow") === "deck";
 
   return (
     <ChartEditor
@@ -30,6 +31,7 @@ export default function EditorLoader() {
       initialKind={initialKind}
       source={source}
       initialVersion={initialVersion}
+      deckFlow={deckFlow}
     />
   );
 }

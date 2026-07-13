@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import Masthead from "@/components/Masthead";
-import { PENDING_KEY } from "@/components/ChartPicker";
 import ChartSVG from "@/lib/charts/ChartSVG";
 import { createDocument } from "@/lib/id";
 import { readPptx } from "@/lib/pptx";
@@ -13,7 +12,7 @@ import { typeDisplayName } from "@/lib/plott/mapping";
 import { getDocument, saveDocument } from "@/lib/store/db";
 import { newDeckId, saveDeck } from "@/lib/store/deck";
 import { saveSource } from "@/lib/store/pptxSource";
-import type { ExtractedChart, PlacedOverlay, PptxReadResult, SlideSize } from "@/lib/pptx";
+import type { PlacedOverlay, PptxReadResult } from "@/lib/pptx";
 import type { ChartSpec, PptxOrigin } from "@/lib/types";
 
 type Phase = "upload" | "reading" | "review" | "error";
@@ -36,6 +35,7 @@ export default function PptxImport() {
   const [note, setNote] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
   const bytesRef = useRef<Uint8Array | null>(null);
+  const deckRef = useRef<{ id: string; chartIds: string[] } | null>(null);
 
   const onFile = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -67,81 +67,75 @@ export default function PptxImport() {
     }
   }, []);
 
-  async function importChart(ex: ExtractedChart, slideSize: SlideSize) {
-    const bytes = bytesRef.current;
-    if (!bytes) return;
-    try {
-      const sourceToken = await saveSource(fileName, bytes);
-      const payload = {
-        spec: withImportedPalette(ex.spec, result?.palette ?? []),
-        data: ex.data,
-        title: ex.title,
-        origin: {
-          fileName,
-          sourceToken,
-          slideIndex: ex.slideIndex,
-          slidePath: ex.slidePath,
-          graphicFrameId: ex.graphicFrameId,
-          rect: ex.rect,
-          slideSize,
-        },
-      };
-      window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(payload));
-      router.push(`/editor?kind=${ex.kind}&from=pending`);
-    } catch {
-      setNote("Couldn't stage that chart for editing. Try again.");
-    }
-  }
-
-  async function createDeck() {
+  /** Build the deck (all charts as saved docs) once; reused by both entry points. */
+  async function ensureDeck(): Promise<{ id: string; chartIds: string[] } | null> {
+    if (deckRef.current) return deckRef.current;
     const bytes = bytesRef.current;
     const read = result;
-    if (!bytes || !read || read.charts.length === 0) return;
-    setBuilding(true);
-    setNote(null);
-    try {
-      const sourceToken = await saveSource(fileName, bytes);
-      const name = fileName.replace(/\.pptx$/i, "");
-      const id = newDeckId();
-      const chartIds: string[] = [];
-      for (const ex of read.charts) {
-        const origin: PptxOrigin = {
-          fileName,
-          sourceToken,
-          slideIndex: ex.slideIndex,
-          slidePath: ex.slidePath,
-          graphicFrameId: ex.graphicFrameId,
-          rect: ex.rect,
-          slideSize: read.slideSize,
-        };
-        const doc = {
-          ...createDocument(withImportedPalette(ex.spec, read.palette), ex.data, ex.title),
-          origin,
-          deck: name,
-          deckId: id,
-        };
-        await saveDocument(doc);
-        chartIds.push(doc.id);
-      }
-      const ts = new Date().toISOString();
-      await saveDeck({
-        id,
-        name,
+    if (!bytes || !read || read.charts.length === 0) return null;
+    const sourceToken = await saveSource(fileName, bytes);
+    const name = fileName.replace(/\.pptx$/i, "");
+    const id = newDeckId();
+    const chartIds: string[] = [];
+    for (const ex of read.charts) {
+      const origin: PptxOrigin = {
         fileName,
         sourceToken,
+        slideIndex: ex.slideIndex,
+        slidePath: ex.slidePath,
+        graphicFrameId: ex.graphicFrameId,
+        rect: ex.rect,
         slideSize: read.slideSize,
-        chartIds,
-        palette: read.palette.length >= 2 ? read.palette : undefined,
-        createdAt: ts,
-        updatedAt: ts,
-      });
-      // Start the guided flow at the first chart; finishing the last one returns
-      // to the deck overview (/deck).
-      router.push(`/editor?id=${chartIds[0]}`);
-    } catch {
+      };
+      const doc = {
+        ...createDocument(withImportedPalette(ex.spec, read.palette), ex.data, ex.title),
+        origin,
+        deck: name,
+        deckId: id,
+      };
+      await saveDocument(doc);
+      chartIds.push(doc.id);
+    }
+    const ts = new Date().toISOString();
+    await saveDeck({
+      id,
+      name,
+      fileName,
+      sourceToken,
+      slideSize: read.slideSize,
+      chartIds,
+      palette: read.palette.length >= 2 ? read.palette : undefined,
+      createdAt: ts,
+      updatedAt: ts,
+    });
+    deckRef.current = { id, chartIds };
+    return deckRef.current;
+  }
+
+  async function editWholeDeck() {
+    setBuilding(true);
+    setNote(null);
+    const d = await ensureDeck();
+    if (!d) {
       setBuilding(false);
       setNote("Couldn't build the deck. Try again.");
+      return;
     }
+    // Guided flow: start at the first chart, next/next through the deck.
+    router.push(`/editor?id=${d.chartIds[0]}&flow=deck`);
+  }
+
+  async function editSingleChart(index: number) {
+    setBuilding(true);
+    setNote(null);
+    const d = await ensureDeck();
+    if (!d || !d.chartIds[index]) {
+      setBuilding(false);
+      setNote("Couldn't open that chart. Try again.");
+      return;
+    }
+    // Single-chart edit: "Done" returns to this presentation's chart gallery.
+    router.push(`/editor?id=${d.chartIds[index]}`);
   }
 
   async function reopenOverlay(o: PlacedOverlay) {
@@ -196,7 +190,7 @@ export default function PptxImport() {
             <div className="mb-6 flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={createDeck}
+                onClick={editWholeDeck}
                 disabled={building}
                 className="rounded-lg bg-accent px-[22px] py-3 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
               >
@@ -214,13 +208,17 @@ export default function PptxImport() {
                 <button
                   key={`${ex.slidePath}-${ex.graphicFrameId}-${i}`}
                   type="button"
-                  onClick={() => importChart(ex, result.slideSize)}
-                  aria-label={`Import ${typeDisplayName(ex.kind)} from slide ${ex.slideIndex + 1}`}
-                  className="flex flex-col gap-3 rounded-xl border border-rule bg-panel p-4 text-left transition-colors hover:border-accent"
+                  onClick={() => editSingleChart(i)}
+                  disabled={building}
+                  aria-label={`Edit ${typeDisplayName(ex.kind)} from slide ${ex.slideIndex + 1}`}
+                  className="flex flex-col gap-3 rounded-xl border border-rule bg-panel p-4 text-left transition-colors hover:border-accent disabled:opacity-50"
                 >
                   <div className="h-[150px] overflow-hidden rounded-lg bg-chart-tint p-2">
                     <ChartSVG
-                      spec={{ ...ex.spec, style: { ...ex.spec.style, hideAxisLabels: true } }}
+                      spec={{
+                        ...withImportedPalette(ex.spec, result.palette),
+                        style: { ...withImportedPalette(ex.spec, result.palette).style, hideAxisLabels: true },
+                      }}
                       data={ex.data}
                       width={300}
                       height={130}
