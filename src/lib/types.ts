@@ -78,6 +78,11 @@ export interface ChartStyle {
   showIdBadge: boolean;
   xAxisLabel?: string;
   yAxisLabel?: string;
+  /** Imported value-axis scaling (from PowerPoint's `c:valAx`), so the rendered
+   *  axis matches the original — e.g. an axis that topped out at 4 stays 4. */
+  yAxisMin?: number;
+  yAxisMax?: number;
+  yAxisMajorUnit?: number;
   /* ---- Design style (theme) — optional; defaulted by the renderer ---- */
   /** Bar corner radius in px. */
   barRadius?: number;

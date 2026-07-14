@@ -124,6 +124,25 @@ describe("chartToPlott", () => {
   it("falls back to a default title", () => {
     expect(chartToPlott(raw({ plotType: "pieChart", series: [ser("A", ["x"], [1])] })).title).toBe("Imported chart");
   });
+
+  it("threads the imported value-axis scaling into the spec style", () => {
+    const c = raw({
+      plotType: "barChart",
+      series: [ser("S", ["A", "B"], [2, 3])],
+      valAxis: { min: 0, max: 4, majorUnit: 1 },
+    });
+    const { spec } = chartToPlott(c);
+    expect(spec.style.yAxisMin).toBe(0);
+    expect(spec.style.yAxisMax).toBe(4);
+    expect(spec.style.yAxisMajorUnit).toBe(1);
+  });
+
+  it("leaves axis-scaling fields unset when the source auto-scales", () => {
+    const c = raw({ plotType: "barChart", series: [ser("S", ["A"], [2])] });
+    const { spec } = chartToPlott(c);
+    expect(spec.style.yAxisMax).toBeUndefined();
+    expect(spec.style.yAxisMin).toBeUndefined();
+  });
 });
 
 describe("toExtractedChart", () => {

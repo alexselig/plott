@@ -58,6 +58,8 @@ export interface RawChart {
   fromCache: boolean;
   /** Relationship id of the embedded workbook (`c:externalData`), if any. */
   externalDataRid?: string;
+  /** Imported value-axis scaling (`c:valAx` → `c:scaling` min/max + `c:majorUnit`). */
+  valAxis?: { min?: number; max?: number; majorUnit?: number };
 }
 
 export interface RawReadResult {
@@ -340,7 +342,39 @@ export function parseChartXml(xml: string): Omit<
     title,
     fromCache,
     externalDataRid: attr(child(space, "c:externalData"), "r:id"),
+    valAxis: readValueAxis(plotArea),
   };
+}
+
+/** Parse an optional numeric attribute (`@_val`), returning undefined if absent/NaN. */
+function numAttr(node: unknown, name: string): number | undefined {
+  const raw = attr(node, name);
+  if (raw == null) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * Read the value axis scaling (`c:valAx` → `c:scaling` min/max + `c:majorUnit`) so
+ * the rendered axis can match the original chart. Returns undefined when the axis
+ * carries no explicit bounds (PowerPoint auto-scaled). For multi-value-axis charts
+ * (scatter/bubble) the first value axis is used.
+ */
+function readValueAxis(
+  plotArea: XmlNode,
+): { min?: number; max?: number; majorUnit?: number } | undefined {
+  const valAx = asArray<XmlNode>(plotArea["c:valAx"])[0];
+  if (!valAx) return undefined;
+  const scaling = child(valAx, "c:scaling");
+  const min = numAttr(child(scaling, "c:min"), "val");
+  const max = numAttr(child(scaling, "c:max"), "val");
+  const majorUnit = numAttr(child(valAx, "c:majorUnit"), "val");
+  if (min === undefined && max === undefined && majorUnit === undefined) return undefined;
+  const out: { min?: number; max?: number; majorUnit?: number } = {};
+  if (min !== undefined) out.min = min;
+  if (max !== undefined) out.max = max;
+  if (majorUnit !== undefined) out.majorUnit = majorUnit;
+  return out;
 }
 
 /* ------------------------------------------------------------------ */

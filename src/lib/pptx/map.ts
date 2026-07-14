@@ -111,10 +111,19 @@ export function chartToPlott(raw: RawChart): MappedChart {
   const kind = rawToKind(raw);
   const data = rawToDataTable(raw, kind);
   const title = raw.title || "Imported chart";
+  const base = blankSpec(kind);
   const spec = {
-    ...blankSpec(kind),
+    ...base,
     title,
     encoding: encodingFor(kind, data),
+    // Carry the original value-axis scaling so the rendered axis matches the
+    // source chart (e.g. an axis that topped out at 4 stays 4, not the data max).
+    style: {
+      ...base.style,
+      ...(raw.valAxis?.min !== undefined ? { yAxisMin: raw.valAxis.min } : {}),
+      ...(raw.valAxis?.max !== undefined ? { yAxisMax: raw.valAxis.max } : {}),
+      ...(raw.valAxis?.majorUnit !== undefined ? { yAxisMajorUnit: raw.valAxis.majorUnit } : {}),
+    },
   };
   return { spec, data, title };
 }

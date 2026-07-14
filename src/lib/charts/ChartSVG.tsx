@@ -11,6 +11,7 @@ import { effectiveColor, resolvedPalette } from "@/lib/charts/colors";
 import { dragToValue, snapToHalf } from "@/lib/charts/interact";
 import { barRadius, paintArea, paintBackground, paintFilledMark, paintLine, paintPoint, treatmentDefs, type ShapeFn } from "@/lib/charts/paint";
 import { EXTRA_KINDS, renderExtra } from "@/lib/charts/renderExtra";
+import { valueDomain, valueTicks } from "@/lib/charts/scale";
 import { cardBg, TREATMENTS, treatmentOf } from "@/lib/charts/styles";
 import { FONT, SERIF, fmt } from "@/lib/charts/theme";
 import type { ChartKind, ChartSpec, DataTable } from "@/lib/types";
@@ -432,14 +433,18 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
   const flat = series.flatMap((s) => s.values);
   const vmaxRaw = stacked ? d3max(stackedTotals) ?? 0 : d3max(flat) ?? 0;
   const vmax = vmaxRaw > 0 ? vmaxRaw : 1;
+  // Honor the imported value-axis scaling (min/max/majorUnit) so the rendered
+  // axis matches the source chart; falls back to a nice, data-driven domain.
+  const valAxis = { min: spec.style.yAxisMin, max: spec.style.yAxisMax };
+  const vdomain = valueDomain(vmax, valAxis);
 
   let axisEls: React.ReactNode = null;
   let markEls: React.ReactNode = null;
 
   if (isHorizontal) {
-    const x = scaleLinear().domain([0, vmax]).nice().range([0, iw]);
+    const x = scaleLinear().domain(vdomain).range([0, iw]);
     const yb = scaleBand<string>().domain(cats).range([0, ih]).padding(0.32);
-    const unitsPerPxX = x.domain()[1] / iw;
+    const unitsPerPxX = (x.domain()[1] - x.domain()[0]) / iw;
     axisEls = (
       <>
         {!compact &&
@@ -474,9 +479,9 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
       );
     });
   } else {
-    const y = scaleLinear().domain([0, vmax]).nice().range([ih, 0]);
-    const yticks = y.ticks(5);
-    const unitsPerPxY = y.domain()[1] / ih;
+    const y = scaleLinear().domain(vdomain).range([ih, 0]);
+    const yticks = valueTicks(vdomain, spec.style.yAxisMajorUnit) ?? y.ticks(5);
+    const unitsPerPxY = (y.domain()[1] - y.domain()[0]) / ih;
     const band = scaleBand<string>().domain(cats).range([0, iw]).padding(0.22);
     const point = scalePoint<string>().domain(cats).range([0, iw]).padding(0.5);
     const centerX = (i: number) =>
