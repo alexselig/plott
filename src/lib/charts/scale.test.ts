@@ -34,6 +34,22 @@ describe("valueDomain", () => {
     expect(valueDomain(3, { max: Number.NaN })).toEqual([0, 3]);
     expect(valueDomain(3, { min: 5, max: 2 })).not.toEqual([5, 2]);
   });
+
+  it("honors imported bounds for scatter/bubble value axes (e.g. y to 4, x to 3.5)", () => {
+    // Bubble y: data extent 0.8..3.2, imported axis 0..4 → axis stays 0..4.
+    expect(valueDomain(3.2, { min: 0, max: 4 }, 0.8)).toEqual([0, 4]);
+    // Bubble x: data extent 0.7..2.6, imported axis 0..3.5 → axis stays 0..3.5.
+    expect(valueDomain(2.6, { min: 0, max: 3.5 }, 0.7)).toEqual([0, 3.5]);
+  });
+
+  it("keeps a 0 baseline for auto scatter axes with positive data (dataMin default)", () => {
+    expect(valueDomain(3.2, undefined, 0.8)[0]).toBe(0);
+  });
+
+  it("extends below zero for auto axes with negative data", () => {
+    const [min] = valueDomain(5, undefined, -3);
+    expect(min).toBeLessThanOrEqual(-3);
+  });
 });
 
 describe("valueTicks", () => {

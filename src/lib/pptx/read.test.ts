@@ -134,28 +134,43 @@ describe("parseChartXml", () => {
     expect(c.series[0].vals).toEqual([5, 3, 2]);
   });
 
-  it("reads the value-axis scaling (min/max/majorUnit)", () => {
+  it("reads the value-axis scaling (min/max/majorUnit) as the y axis", () => {
     const xml = `<c:chartSpace ${C} ${A}><c:chart><c:plotArea>
       <c:barChart><c:barDir val="col"/><c:ser><c:cat>${strCache(["A", "B"])}</c:cat>
         <c:val>${numCache([2, 3])}</c:val></c:ser></c:barChart>
       <c:catAx><c:axId val="1"/></c:catAx>
-      <c:valAx><c:axId val="2"/>
+      <c:valAx><c:axId val="2"/><c:axPos val="l"/>
         <c:scaling><c:orientation val="minMax"/><c:max val="4"/><c:min val="0"/></c:scaling>
         <c:majorUnit val="1"/>
       </c:valAx>
     </c:plotArea></c:chart></c:chartSpace>`;
     const c = parseChartXml(xml);
-    expect(c.valAxis).toEqual({ min: 0, max: 4, majorUnit: 1 });
+    expect(c.valueAxes).toEqual({ y: { min: 0, max: 4, majorUnit: 1 } });
   });
 
-  it("omits valAxis when the axis auto-scales (no explicit bounds)", () => {
+  it("reads both value axes for a bubble chart (x + y)", () => {
+    const xml = `<c:chartSpace ${C} ${A}><c:chart><c:plotArea>
+      <c:bubbleChart><c:ser><c:xVal>${numCache([1, 2])}</c:xVal>
+        <c:yVal>${numCache([3, 4])}</c:yVal><c:bubbleSize>${numCache([5, 6])}</c:bubbleSize></c:ser>
+        <c:axId val="1"/><c:axId val="2"/></c:bubbleChart>
+      <c:valAx><c:axId val="1"/><c:axPos val="b"/>
+        <c:scaling><c:max val="3.5"/><c:min val="0"/></c:scaling><c:majorUnit val="0.5"/></c:valAx>
+      <c:valAx><c:axId val="2"/><c:axPos val="l"/>
+        <c:scaling><c:max val="4"/><c:min val="0"/></c:scaling><c:majorUnit val="0.5"/></c:valAx>
+    </c:plotArea></c:chart></c:chartSpace>`;
+    const c = parseChartXml(xml);
+    expect(c.valueAxes?.x).toEqual({ min: 0, max: 3.5, majorUnit: 0.5 });
+    expect(c.valueAxes?.y).toEqual({ min: 0, max: 4, majorUnit: 0.5 });
+  });
+
+  it("omits valueAxes when the axis auto-scales (no explicit bounds)", () => {
     const xml = `<c:chartSpace ${C} ${A}><c:chart><c:plotArea>
       <c:barChart><c:barDir val="col"/><c:ser><c:cat>${strCache(["A", "B"])}</c:cat>
         <c:val>${numCache([2, 3])}</c:val></c:ser></c:barChart>
       <c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/></c:scaling></c:valAx>
     </c:plotArea></c:chart></c:chartSpace>`;
     const c = parseChartXml(xml);
-    expect(c.valAxis).toBeUndefined();
+    expect(c.valueAxes).toBeUndefined();
   });
 });
 

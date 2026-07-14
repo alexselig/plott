@@ -79,10 +79,14 @@ export interface ChartStyle {
   xAxisLabel?: string;
   yAxisLabel?: string;
   /** Imported value-axis scaling (from PowerPoint's `c:valAx`), so the rendered
-   *  axis matches the original — e.g. an axis that topped out at 4 stays 4. */
+   *  axis matches the original — e.g. an axis that topped out at 4 stays 4.
+   *  For scatter/bubble the x fields carry the horizontal value axis. */
   yAxisMin?: number;
   yAxisMax?: number;
   yAxisMajorUnit?: number;
+  xAxisMin?: number;
+  xAxisMax?: number;
+  xAxisMajorUnit?: number;
   /* ---- Design style (theme) — optional; defaulted by the renderer ---- */
   /** Bar corner radius in px. */
   barRadius?: number;

@@ -7,6 +7,7 @@ import { curveCatmullRom, curveLinear, line as d3line } from "d3-shape";
 import { categories, numericValues, seriesList } from "@/lib/charts/access";
 import type { DragAxisInfo } from "@/lib/charts/ChartSVG";
 import { barRadius, paintFilledMark, paintLine, paintPoint, type ShapeFn } from "@/lib/charts/paint";
+import { valueDomain, valueTicks } from "@/lib/charts/scale";
 import type { TreatmentKey } from "@/lib/charts/styles";
 import { AXIS, FONT, fmt, GRID, INK } from "@/lib/charts/theme";
 import { histogramBins, waterfallSteps } from "@/lib/charts/transforms";
@@ -118,8 +119,12 @@ function renderScatter(ctx: ExtraContext): ReactNode {
   const ih = Math.max(10, height - m.top - m.bottom);
   const xe = d3extent(xs);
   const ye = d3extent(ys);
-  const x = scaleLinear().domain([Math.min(0, xe[0] ?? 0), (xe[1] ?? 1) || 1]).nice().range([0, iw]);
-  const y = scaleLinear().domain([Math.min(0, ye[0] ?? 0), (ye[1] ?? 1) || 1]).nice().range([ih, 0]);
+  // Honor the imported value-axis scaling (both axes are value axes for
+  // scatter/bubble) so the rendered axes match the source chart.
+  const xDomain = valueDomain(xe[1] ?? 1, { min: spec.style.xAxisMin, max: spec.style.xAxisMax }, xe[0] ?? 0);
+  const yDomain = valueDomain(ye[1] ?? 1, { min: spec.style.yAxisMin, max: spec.style.yAxisMax }, ye[0] ?? 0);
+  const x = scaleLinear().domain(xDomain).range([0, iw]);
+  const y = scaleLinear().domain(yDomain).range([ih, 0]);
   const smax = d3max(sizes) ?? 1;
 
   const xd = x.domain();
@@ -127,14 +132,16 @@ function renderScatter(ctx: ExtraContext): ReactNode {
   const unitsPerPxX = (xd[1] - xd[0]) / iw;
   const unitsPerPxY = (yd[1] - yd[0]) / ih;
   const yKey = spec.encoding.y?.[0];
+  const xticks = valueTicks(xDomain, spec.style.xAxisMajorUnit) ?? x.ticks(5);
+  const yticks = valueTicks(yDomain, spec.style.yAxisMajorUnit) ?? y.ticks(5);
 
   return (
     <g transform={`translate(${m.left},${m.top})`}>
       {!compact &&
-        y.ticks(5).map((t, i) => (
+        yticks.map((t, i) => (
           <text key={`y${i}`} x={-8} y={y(t) + 3.5} textAnchor="end" fontSize={11} fill={labelColor} fontFamily={labelFont}>{fmt(t)}</text>
         ))}
-      {!compact && x.ticks(5).map((t, i) => (
+      {!compact && xticks.map((t, i) => (
         <text key={`x${i}`} x={x(t)} y={ih + 16} textAnchor="middle" fontSize={11} fill={labelColor} fontFamily={labelFont}>{fmt(t)}</text>
       ))}
       {!compact && <line x1={0} x2={iw} y1={ih} y2={ih} stroke={labelColor} strokeOpacity={0.5} />}

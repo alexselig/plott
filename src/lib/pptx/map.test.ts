@@ -129,12 +129,24 @@ describe("chartToPlott", () => {
     const c = raw({
       plotType: "barChart",
       series: [ser("S", ["A", "B"], [2, 3])],
-      valAxis: { min: 0, max: 4, majorUnit: 1 },
+      valueAxes: { y: { min: 0, max: 4, majorUnit: 1 } },
     });
     const { spec } = chartToPlott(c);
     expect(spec.style.yAxisMin).toBe(0);
     expect(spec.style.yAxisMax).toBe(4);
     expect(spec.style.yAxisMajorUnit).toBe(1);
+  });
+
+  it("threads both value axes into the style for a bubble chart", () => {
+    const c = raw({
+      plotType: "bubbleChart",
+      series: [{ name: "B", cats: [], vals: [3], xVals: [1], sizes: [10] }],
+      valueAxes: { x: { min: 0, max: 3.5 }, y: { min: 0, max: 4 } },
+    });
+    const { spec } = chartToPlott(c);
+    expect(spec.kind).toBe("bubble");
+    expect(spec.style.xAxisMax).toBe(3.5);
+    expect(spec.style.yAxisMax).toBe(4);
   });
 
   it("leaves axis-scaling fields unset when the source auto-scales", () => {

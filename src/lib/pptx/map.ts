@@ -112,20 +112,34 @@ export function chartToPlott(raw: RawChart): MappedChart {
   const data = rawToDataTable(raw, kind);
   const title = raw.title || "Imported chart";
   const base = blankSpec(kind);
+  // Carry the original value-axis scaling so the rendered axes match the source
+  // chart. Scatter/bubble have two value axes (x + y); category charts have one
+  // value axis (mapped to y — the renderer applies it to whichever direction is
+  // the value direction, incl. horizontal bars).
+  const va = raw.valueAxes;
+  const yAxis = isXY(kind) ? va?.y : va?.y ?? va?.x;
+  const xAxis = isXY(kind) ? va?.x : undefined;
   const spec = {
     ...base,
     title,
     encoding: encodingFor(kind, data),
-    // Carry the original value-axis scaling so the rendered axis matches the
-    // source chart (e.g. an axis that topped out at 4 stays 4, not the data max).
     style: {
       ...base.style,
-      ...(raw.valAxis?.min !== undefined ? { yAxisMin: raw.valAxis.min } : {}),
-      ...(raw.valAxis?.max !== undefined ? { yAxisMax: raw.valAxis.max } : {}),
-      ...(raw.valAxis?.majorUnit !== undefined ? { yAxisMajorUnit: raw.valAxis.majorUnit } : {}),
+      ...axisStyle("y", yAxis),
+      ...axisStyle("x", xAxis),
     },
   };
   return { spec, data, title };
+}
+
+/** Build the `{x,y}AxisMin/Max/MajorUnit` style fields from a parsed axis. */
+function axisStyle(axis: "x" | "y", a?: { min?: number; max?: number; majorUnit?: number }) {
+  if (!a) return {};
+  const out: Record<string, number> = {};
+  if (a.min !== undefined) out[`${axis}AxisMin`] = a.min;
+  if (a.max !== undefined) out[`${axis}AxisMax`] = a.max;
+  if (a.majorUnit !== undefined) out[`${axis}AxisMajorUnit`] = a.majorUnit;
+  return out;
 }
 
 /** Assemble the full ExtractedChart (data + geometry + provenance) for the UI. */

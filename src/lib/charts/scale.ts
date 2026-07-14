@@ -19,14 +19,15 @@ export interface ValueAxis {
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 /**
- * The `[min, max]` value-axis domain. Honors an imported axis max exactly (so the
- * axis matches the original chart), but never crops data that now exceeds those
- * bounds — if the user grows a value past the imported top, it falls back to a
- * nice, data-driven domain. With no imported bounds it matches the previous auto
- * behavior (nice-rounded 0…dataMax).
+ * The `[min, max]` value-axis domain. Honors an imported axis min/max exactly (so
+ * the axis matches the original chart), but never crops data that now exceeds
+ * those bounds — if the user grows a value past the imported top, it falls back to
+ * a nice, data-driven domain. With no imported bounds it matches the previous auto
+ * behavior: nice-rounded from `dataMin`…`dataMax`, clamped to include 0 (bar
+ * baseline; `dataMin` defaults to 0 so category charts are unaffected).
  */
-export function valueDomain(dataMax: number, axis?: ValueAxis): [number, number] {
-  const min = isNum(axis?.min) ? (axis!.min as number) : 0;
+export function valueDomain(dataMax: number, axis?: ValueAxis, dataMin = 0): [number, number] {
+  const min = isNum(axis?.min) ? (axis!.min as number) : Math.min(0, dataMin);
   const safeMax = dataMax > min ? dataMax : min + 1;
   if (isNum(axis?.max)) {
     const impMax = axis!.max as number;

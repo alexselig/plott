@@ -58,8 +58,17 @@ export interface RawChart {
   fromCache: boolean;
   /** Relationship id of the embedded workbook (`c:externalData`), if any. */
   externalDataRid?: string;
-  /** Imported value-axis scaling (`c:valAx` → `c:scaling` min/max + `c:majorUnit`). */
-  valAxis?: { min?: number; max?: number; majorUnit?: number };
+  /** Imported value-axis scaling (`c:valAx` → `c:scaling` min/max + `c:majorUnit`),
+   *  classified by orientation. `y` is the value axis for category charts; `x` is
+   *  the horizontal value axis for scatter/bubble. */
+  valueAxes?: { x?: AxisScaling; y?: AxisScaling };
+}
+
+/** Explicit value-axis scaling parsed from a `c:valAx`. */
+export interface AxisScaling {
+  min?: number;
+  max?: number;
+  majorUnit?: number;
 }
 
 export interface RawReadResult {
@@ -342,7 +351,7 @@ export function parseChartXml(xml: string): Omit<
     title,
     fromCache,
     externalDataRid: attr(child(space, "c:externalData"), "r:id"),
-    valAxis: readValueAxis(plotArea),
+    valueAxes: readValueAxes(plotArea),
   };
 }
 
@@ -354,26 +363,52 @@ function numAttr(node: unknown, name: string): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/**
- * Read the value axis scaling (`c:valAx` → `c:scaling` min/max + `c:majorUnit`) so
- * the rendered axis can match the original chart. Returns undefined when the axis
- * carries no explicit bounds (PowerPoint auto-scaled). For multi-value-axis charts
- * (scatter/bubble) the first value axis is used.
- */
-function readValueAxis(
-  plotArea: XmlNode,
-): { min?: number; max?: number; majorUnit?: number } | undefined {
-  const valAx = asArray<XmlNode>(plotArea["c:valAx"])[0];
-  if (!valAx) return undefined;
+/** Read min/max/majorUnit from one `c:valAx`; undefined if it carries no bounds. */
+function readAxisScaling(valAx: XmlNode): AxisScaling | undefined {
   const scaling = child(valAx, "c:scaling");
   const min = numAttr(child(scaling, "c:min"), "val");
   const max = numAttr(child(scaling, "c:max"), "val");
   const majorUnit = numAttr(child(valAx, "c:majorUnit"), "val");
   if (min === undefined && max === undefined && majorUnit === undefined) return undefined;
-  const out: { min?: number; max?: number; majorUnit?: number } = {};
+  const out: AxisScaling = {};
   if (min !== undefined) out.min = min;
   if (max !== undefined) out.max = max;
   if (majorUnit !== undefined) out.majorUnit = majorUnit;
+  return out;
+}
+
+/**
+ * Read the value axes' scaling so the rendered axes can match the original chart.
+ * Category charts (bar/line/area) have a single value axis → `y`. Scatter/bubble
+ * have two value axes; they're classified by `c:axPos` (`b`/`t` → x, `l`/`r` → y),
+ * falling back to document order (x then y) when position is absent. Returns
+ * undefined when no axis carries explicit bounds (PowerPoint auto-scaled).
+ */
+function readValueAxes(plotArea: XmlNode): { x?: AxisScaling; y?: AxisScaling } | undefined {
+  const axes = asArray<XmlNode>(plotArea["c:valAx"]);
+  if (axes.length === 0) return undefined;
+  let x: AxisScaling | undefined;
+  let y: AxisScaling | undefined;
+  axes.forEach((ax, i) => {
+    const scaling = readAxisScaling(ax);
+    if (!scaling) return;
+    const pos = attr(child(ax, "c:axPos"), "val");
+    if (pos === "b" || pos === "t") {
+      x = x ?? scaling;
+    } else if (pos === "l" || pos === "r") {
+      y = y ?? scaling;
+    } else if (axes.length >= 2) {
+      // No position: fall back to OOXML order (x axis first for scatter/bubble).
+      if (i === 0) x = x ?? scaling;
+      else y = y ?? scaling;
+    } else {
+      y = y ?? scaling;
+    }
+  });
+  if (!x && !y) return undefined;
+  const out: { x?: AxisScaling; y?: AxisScaling } = {};
+  if (x) out.x = x;
+  if (y) out.y = y;
   return out;
 }
 
