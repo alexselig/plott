@@ -50,6 +50,10 @@ enable it:
    at build time — see `.env.example`. The client id is a public SPA identifier,
    not a secret.
 
+See **[docs/M365-setup.md](docs/M365-setup.md)** for the full walkthrough
+(redirect URIs, admin consent, the Microsoft corp-tenant **Service Tree ID**
+prompt, and troubleshooting).
+
 > The deck is uploaded to the **user's own** OneDrive (first-party, same tenant)
 > only for the conversion, then the temp copy is deleted. Hidden slides may shift
 > PDF page numbers; the page is clamped to the document.
