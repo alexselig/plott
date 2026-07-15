@@ -11,7 +11,7 @@ import { effectiveColor, resolvedPalette } from "@/lib/charts/colors";
 import { dragToValue, snapToHalf } from "@/lib/charts/interact";
 import { barRadius, paintArea, paintBackground, paintFilledMark, paintLine, paintPoint, treatmentDefs, type ShapeFn } from "@/lib/charts/paint";
 import { EXTRA_KINDS, renderExtra } from "@/lib/charts/renderExtra";
-import { valueDomain, valueTicks } from "@/lib/charts/scale";
+import { valueDomain, axisTicks } from "@/lib/charts/scale";
 import { cardBg, TREATMENTS, treatmentOf } from "@/lib/charts/styles";
 import { FONT, SERIF, fmt } from "@/lib/charts/theme";
 import type { ChartKind, ChartSpec, DataTable } from "@/lib/types";
@@ -480,7 +480,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     });
   } else {
     const y = scaleLinear().domain(vdomain).range([ih, 0]);
-    const yticks = valueTicks(vdomain, spec.style.yAxisMajorUnit) ?? y.ticks(5);
+    const yticks = axisTicks(vdomain, spec.style.yAxisMajorUnit) ?? y.ticks(5);
     const unitsPerPxY = (y.domain()[1] - y.domain()[0]) / ih;
     const band = scaleBand<string>().domain(cats).range([0, iw]).padding(0.22);
     const point = scalePoint<string>().domain(cats).range([0, iw]).padding(0.5);

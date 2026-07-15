@@ -7,7 +7,7 @@ import { curveCatmullRom, curveLinear, line as d3line } from "d3-shape";
 import { categories, numericValues, seriesList } from "@/lib/charts/access";
 import type { DragAxisInfo } from "@/lib/charts/ChartSVG";
 import { barRadius, paintFilledMark, paintLine, paintPoint, type ShapeFn } from "@/lib/charts/paint";
-import { valueDomain, valueTicks } from "@/lib/charts/scale";
+import { valueDomain, axisTicks } from "@/lib/charts/scale";
 import type { TreatmentKey } from "@/lib/charts/styles";
 import { AXIS, FONT, fmt, GRID, INK } from "@/lib/charts/theme";
 import { histogramBins, waterfallSteps } from "@/lib/charts/transforms";
@@ -132,8 +132,8 @@ function renderScatter(ctx: ExtraContext): ReactNode {
   const unitsPerPxX = (xd[1] - xd[0]) / iw;
   const unitsPerPxY = (yd[1] - yd[0]) / ih;
   const yKey = spec.encoding.y?.[0];
-  const xticks = valueTicks(xDomain, spec.style.xAxisMajorUnit) ?? x.ticks(5);
-  const yticks = valueTicks(yDomain, spec.style.yAxisMajorUnit) ?? y.ticks(5);
+  const xticks = axisTicks(xDomain, spec.style.xAxisMajorUnit) ?? x.ticks(5);
+  const yticks = axisTicks(yDomain, spec.style.yAxisMajorUnit) ?? y.ticks(5);
 
   return (
     <g transform={`translate(${m.left},${m.top})`}>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { valueDomain, valueTicks } from "@/lib/charts/scale";
+import { valueDomain, valueTicks, axisTicks, niceBounds, gridStep } from "@/lib/charts/scale";
 
 describe("valueDomain", () => {
   it("honors an imported axis max exactly (4 stays 4, not the data max of 3)", () => {
@@ -18,10 +18,10 @@ describe("valueDomain", () => {
     expect(max).toBeGreaterThanOrEqual(7);
   });
 
-  it("matches the previous auto behavior with no imported bounds", () => {
+  it("rounds up to a nice top with no imported bounds", () => {
     expect(valueDomain(3)).toEqual([0, 3]);
     const [, max] = valueDomain(87);
-    expect(max).toBeGreaterThanOrEqual(87); // nice-rounded up
+    expect(max).toBeGreaterThanOrEqual(87); // nice-rounded up (100)
   });
 
   it("guards a degenerate/zero data max", () => {
@@ -46,9 +46,66 @@ describe("valueDomain", () => {
     expect(valueDomain(3.2, undefined, 0.8)[0]).toBe(0);
   });
 
+  it("auto-scales an axis to PowerPoint's rounded top, not the data max", () => {
+    // Bubble y (data 0.8..3.2): PowerPoint tops the axis at 4, not a data-hugging 3.5.
+    expect(valueDomain(3.2, undefined, 0.8)).toEqual([0, 4]);
+    // A category chart whose data peaks at 3.2 likewise rounds up to 4.
+    expect(valueDomain(3.2)).toEqual([0, 4]);
+  });
+
+  it("adds headroom so a point at the data edge is never cropped", () => {
+    // Bubble x (data 0.7..2.6): the old .nice() gave [0, 2.6] and clipped the 2.6
+    // point at the plot edge; auto bounds now extend to 3 so it sits well inside.
+    const [min, max] = valueDomain(2.6, undefined, 0.7);
+    expect(min).toBe(0);
+    expect(max).toBeGreaterThan(2.6);
+    expect(max).toBe(3);
+  });
+
   it("extends below zero for auto axes with negative data", () => {
     const [min] = valueDomain(5, undefined, -3);
     expect(min).toBeLessThanOrEqual(-3);
+  });
+});
+
+describe("niceBounds", () => {
+  it("rounds outward to nice 1/2/5 gridline steps with headroom", () => {
+    expect(niceBounds(0, 3.2)).toEqual({ min: 0, max: 4, step: 1 });
+    expect(niceBounds(0, 2.6)).toEqual({ min: 0, max: 3, step: 1 });
+    expect(niceBounds(0, 87)).toEqual({ min: 0, max: 100, step: 20 });
+    expect(niceBounds(-3, 5)).toEqual({ min: -4, max: 6, step: 2 });
+  });
+
+  it("guards a degenerate (min === max) range", () => {
+    const { min, max, step } = niceBounds(2, 2);
+    expect(min).toBeLessThanOrEqual(2);
+    expect(max).toBeGreaterThan(2);
+    expect(step).toBeGreaterThan(0);
+  });
+});
+
+describe("axisTicks + gridStep (major-unit spacing)", () => {
+  it("prefers the imported major unit", () => {
+    expect(axisTicks([0, 4], 1)).toEqual([0, 1, 2, 3, 4]);
+    expect(axisTicks([0, 4], 0.5)).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4]);
+  });
+
+  it("draws PowerPoint-style fine gridlines when no unit is given", () => {
+    // A 0..4 auto axis (e.g. the bubble y) shows gridlines every 0.5 — 3.5 present —
+    // matching PowerPoint, not the coarse 0,1,2,3,4 of the max rounding.
+    expect(gridStep([0, 4])).toBe(0.5);
+    expect(axisTicks([0, 4])).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4]);
+    // A 0..3 auto axis (bubble x) likewise steps by 0.5.
+    expect(gridStep([0, 3])).toBe(0.5);
+  });
+
+  it("keeps whole-number gridlines where PowerPoint does (0..5 → step 1)", () => {
+    // The line/bar axes top at 5; a finer 0.5 step there would be too dense, so the
+    // major unit stays 1 (0,1,2,3,4,5) — matching PowerPoint.
+    expect(gridStep([0, 5])).toBe(1);
+    expect(axisTicks([0, 5])).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(gridStep([0, 100])).toBe(20);
+    expect(axisTicks([0, 100])).toEqual([0, 20, 40, 60, 80, 100]);
   });
 });
 
