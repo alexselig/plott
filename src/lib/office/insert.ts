@@ -58,6 +58,22 @@ export async function readSelectedChart(bridge: OfficeBridge): Promise<StampRef 
   return tagsToRef(sel.tags);
 }
 
+export type SelectionKind = "plott" | "native" | "none";
+
+/**
+ * Classify the current on-slide selection so the pane can show only the relevant
+ * action: a Plott chart we inserted (has our tag) → "plott"; a native/Excel chart
+ * (PowerPoint ShapeType "Chart") → "native"; anything else (or empty) → "none".
+ */
+export async function classifySelection(bridge: OfficeBridge): Promise<{ kind: SelectionKind; ref?: StampRef }> {
+  const sel = await bridge.readSelected();
+  if (!sel) return { kind: "none" };
+  const ref = tagsToRef(sel.tags);
+  if (ref) return { kind: "plott", ref };
+  if (sel.type === "Chart") return { kind: "native" };
+  return { kind: "none" };
+}
+
 /**
  * Replace the selected chart image in place: keep its exact slide footprint, swap
  * in the new PNG, and re-tag it with the (new) version. Returns false if there was

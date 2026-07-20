@@ -13,8 +13,8 @@ import { lineToRect, type ShapeDraw } from "@/lib/office/shapes";
 export interface OfficeBridge {
   /** Insert a base64 PNG; PowerPoint places it and leaves it selected. */
   insertImageBase64(base64: string): Promise<void>;
-  /** Tags + geometry of the currently selected shape, or null if none. */
-  readSelected(): Promise<{ tags: Record<string, string>; geometry: PointRect } | null>;
+  /** Tags, geometry, and PowerPoint shape type of the selected shape, or null. */
+  readSelected(): Promise<{ tags: Record<string, string>; geometry: PointRect; type: string } | null>;
   /** Set the selected shape's box (points) and upsert the given tags. */
   styleSelected(rect: PointRect, tags: Record<string, string>): Promise<void>;
   /** Delete the currently selected shape (no-op if nothing is selected). */
@@ -53,7 +53,7 @@ export function powerPointBridge(): OfficeBridge {
         // collection (tags) through the parent collection in one path doesn't
         // reliably populate shape.tags.items, so read the tags explicitly here.
         const shape = sel.items[0];
-        shape.load("left,top,width,height");
+        shape.load("left,top,width,height,type");
         shape.tags.load("key,value");
         await context.sync();
         const tags: Record<string, string> = {};
@@ -63,6 +63,7 @@ export function powerPointBridge(): OfficeBridge {
         return {
           tags,
           geometry: { left: shape.left, top: shape.top, width: shape.width, height: shape.height },
+          type: String(shape.type),
         };
       });
     },

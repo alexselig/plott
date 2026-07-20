@@ -17,20 +17,24 @@ const OFFICE_MOCK = `
     base64Len: (s._base64 || '').length,
     tags: Object.fromEntries(s.tags.items.map(t => [t.key, t.value])),
   }));
-  function makeShape() {
+  function makeShape(type) {
     const tagsMap = {};
     const shape = {
-      left: 0, top: 0, width: 72, height: 72, _base64: null,
+      left: 0, top: 0, width: 72, height: 72, _base64: null, type: type || 'Image',
       tags: { add(k, v){ tagsMap[k] = v; }, load(){}, get items(){ return Object.keys(tagsMap).map(k => ({ key: k, value: tagsMap[k] })); } },
       load(){},
       delete(){ const i = model.shapes.indexOf(shape); if (i>=0) model.shapes.splice(i,1); if (model.selected===shape) model.selected=null; },
     };
     return shape;
   }
+  const selHandlers = [];
+  window.__fireSelection = () => selHandlers.forEach((h) => h());
+  window.__selectNative = () => { model.selected = makeShape('Chart'); window.__fireSelection(); };
   window.Office = {
     HostType: { PowerPoint: 'PowerPoint' },
     CoercionType: { Image: 'image' },
     AsyncResultStatus: { Succeeded: 'succeeded' },
+    EventType: { DocumentSelectionChanged: 'documentSelectionChanged' },
     GeometricShapeType: { rectangle: 'Rectangle', ellipse: 'Ellipse' },
     ConnectorType: { straight: 'Straight' },
     context: {
@@ -39,6 +43,8 @@ const OFFICE_MOCK = `
       document: {
         setSelectedDataAsync(data, opts, cb){ const s = makeShape(); s._base64 = data; model.shapes.push(s); model.selected = s; cb({ status: 'succeeded' }); },
         getFileAsync(type, opts, cb){ const bytes = new Uint8Array([1,2,3,4]); const file = { sliceCount: 1, getSliceAsync(i, scb){ scb({ status: 'succeeded', value: { index: 0, data: bytes } }); }, closeAsync(ccb){ if (ccb) ccb({ status: 'succeeded' }); } }; cb({ status: 'succeeded', value: file }); },
+        addHandlerAsync(eventType, handler, cb){ selHandlers.push(handler); if (cb) cb({ status: 'succeeded' }); },
+        removeHandlerAsync(eventType, opts, cb){ const i = selHandlers.indexOf(opts && opts.handler); if (i >= 0) selHandlers.splice(i, 1); if (cb) cb({ status: 'succeeded' }); },
       },
     },
     onReady(cb){ cb({ host: 'PowerPoint' }); },
@@ -140,11 +146,15 @@ check(
 );
 check("inserted shape has image bytes", snap[0].base64Len > 100);
 
-// ---- 2) select it and restyle ----
-await page.evaluate(() => window.__select(0));
-await page.getByRole("button", { name: "Restyle selected chart" }).click();
-await page.locator("div.sticky p", { hasText: "Restyling" }).waitFor({ timeout: 8000 });
-check("restyle loaded the selected chart", (await page.locator("div.sticky p").textContent())?.includes(insertedId));
+// ---- 2) selecting the Plott chart reveals + drives Restyle ----
+const restyleBtn = page.getByRole("button", { name: "Restyle selected chart" });
+check("Restyle hidden until a Plott chart is selected", (await restyleBtn.count()) === 0);
+await page.evaluate(() => window.__fireSelection()); // the inserted image is the current selection
+await restyleBtn.waitFor({ state: "visible", timeout: 8000 });
+check("Restyle appears when a Plott chart is selected", true);
+await restyleBtn.click();
+await page.locator("p[data-status]", { hasText: "Restyling" }).waitFor({ timeout: 8000 });
+check("restyle loaded the selected chart", (await page.locator("p[data-status]").textContent())?.includes(insertedId));
 
 // ---- 3) recolor then update in place ----
 await page.getByRole("button", { name: "style", exact: true }).click();
@@ -152,17 +162,22 @@ await page.waitForTimeout(200);
 const forest = page.locator('[aria-label="Palette Forest"]');
 if (await forest.count()) await forest.click();
 await page.getByRole("button", { name: "Update on slide" }).click();
-await page.locator("div.sticky p", { hasText: "(v2)" }).waitFor({ timeout: 8000 });
+await page.locator("p[data-status]", { hasText: "(v2)" }).waitFor({ timeout: 8000 });
 snap = await page.evaluate(() => window.__snapshot());
 check("still one shape after in-place update", snap.length === 1, `count=${snap.length}`);
 check("updated shape keeps the same chart id", snap[0]?.tags?.PLOTT_ID === insertedId, snap[0]?.tags?.PLOTT_ID);
 check("updated shape bumped to version 2", snap[0]?.tags?.PLOTT_VERSION === "2", snap[0]?.tags?.PLOTT_VERSION);
 check("updated shape kept its footprint", Math.abs(snap[0].width - 553.1) < 2, `${snap[0].width}`);
 
-// ---- 4) match selected chart: button wired + graceful handling ----
-await page.getByRole("button", { name: /^Match selected chart/ }).click();
-await page.waitForFunction(() => (document.querySelector("div.sticky p")?.textContent || "").length > 0, null, { timeout: 8000 });
-check("match-selected-chart is wired and handles the request", ((await page.locator("div.sticky p").textContent()) || "").length > 0);
+// ---- 4) selecting a native (Excel) chart reveals "Style Excel Chart" ----
+const styleExcelBtn = page.getByRole("button", { name: "Style Excel Chart" });
+check("Style Excel Chart hidden until a native chart is selected", (await styleExcelBtn.count()) === 0);
+await page.evaluate(() => window.__selectNative());
+await styleExcelBtn.waitFor({ state: "visible", timeout: 8000 });
+check("Style Excel Chart appears when a native chart is selected", true);
+await styleExcelBtn.click();
+await page.waitForFunction(() => (document.querySelector("p[data-status]")?.textContent || "").length > 0, null, { timeout: 8000 });
+check("Style Excel Chart is wired and handles the request", ((await page.locator("p[data-status]").textContent()) || "").length > 0);
 
 check("no page errors", errors.length === 0, errors[0] ?? "");
 const passed = results.filter(Boolean).length;

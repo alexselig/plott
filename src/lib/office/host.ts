@@ -45,6 +45,23 @@ export function base64FromBytes(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/**
+ * Subscribe to on-slide selection changes; returns an unsubscribe function.
+ * No-op (returns a no-op) outside the Office host so the pane can call it freely.
+ */
+export function onSelectionChanged(handler: () => void): () => void {
+  if (typeof Office === "undefined" || !Office.context?.document?.addHandlerAsync) return () => {};
+  const h = () => handler();
+  Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, h);
+  return () => {
+    try {
+      Office.context.document.removeHandlerAsync(Office.EventType.DocumentSelectionChanged, { handler: h });
+    } catch {
+      /* ignore */
+    }
+  };
+}
+
 const OFFICE_JS_URL = "https://appsforoffice.microsoft.com/lib/1/hosted/office.js";
 let officeLoad: Promise<boolean> | null = null;
 

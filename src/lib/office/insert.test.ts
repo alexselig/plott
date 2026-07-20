@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { OfficeBridge } from "@/lib/office/bridge";
 import type { PointRect } from "@/lib/office/geometry";
-import { insertChart, insertChartShapes, readSelectedChart, replaceSelectedChart } from "@/lib/office/insert";
+import { classifySelection, insertChart, insertChartShapes, readSelectedChart, replaceSelectedChart } from "@/lib/office/insert";
 import type { ShapeDraw } from "@/lib/office/shapes";
 import { stampToTags, TAG_ID, TAG_VERSION } from "@/lib/office/tags";
 import { sampleFor } from "@/lib/charts/sample";
@@ -11,6 +11,7 @@ import type { ExportStamp } from "@/lib/types";
 interface FakeShape {
   tags: Record<string, string>;
   geometry: PointRect;
+  type?: string;
   base64?: string;
 }
 
@@ -33,7 +34,7 @@ class FakeBridge implements OfficeBridge {
 
   async readSelected() {
     return this.selected
-      ? { tags: { ...this.selected.tags }, geometry: { ...this.selected.geometry } }
+      ? { tags: { ...this.selected.tags }, geometry: { ...this.selected.geometry }, type: this.selected.type ?? "Image" }
       : null;
   }
 
@@ -100,6 +101,23 @@ describe("readSelectedChart", () => {
   it("returns null when the selected shape isn't a Plott chart", async () => {
     const bridge = new FakeBridge({ tags: { SOMETHING: "else" }, geometry: { left: 0, top: 0, width: 1, height: 1 } });
     expect(await readSelectedChart(bridge)).toBeNull();
+  });
+});
+
+describe("classifySelection", () => {
+  it("classifies a tagged Plott chart as 'plott' with its ref", async () => {
+    const bridge = new FakeBridge({ tags: stampToTags(stamp), geometry: { left: 0, top: 0, width: 10, height: 10 }, type: "Image" });
+    expect(await classifySelection(bridge)).toEqual({ kind: "plott", ref: { chartId: "PLT-7Q2F", version: 3 } });
+  });
+
+  it("classifies an untagged native chart shape as 'native'", async () => {
+    const bridge = new FakeBridge({ tags: {}, geometry: { left: 0, top: 0, width: 10, height: 10 }, type: "Chart" });
+    expect(await classifySelection(bridge)).toEqual({ kind: "native" });
+  });
+
+  it("classifies a plain shape or empty selection as 'none'", async () => {
+    expect(await classifySelection(new FakeBridge({ tags: {}, geometry: { left: 0, top: 0, width: 1, height: 1 }, type: "GeometricShape" }))).toEqual({ kind: "none" });
+    expect(await classifySelection(new FakeBridge(null))).toEqual({ kind: "none" });
   });
 });
 
