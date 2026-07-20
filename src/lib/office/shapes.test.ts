@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { sampleFor } from "@/lib/charts/sample";
+import { applyTreatment } from "@/lib/charts/styles";
 import type { PointRect } from "@/lib/office/geometry";
-import { chartToShapes, lineToRect, supportsShapes, type ShapeDraw } from "@/lib/office/shapes";
+import { chartToShapes, lineToRect, shapeMark, supportsShapes, type ShapeDraw } from "@/lib/office/shapes";
 import type { ChartKind } from "@/lib/types";
 
 const RECT: PointRect = { left: 100, top: 50, width: 600, height: 360 };
@@ -97,6 +98,25 @@ describe("chartToShapes — unsupported", () => {
     for (const k of ["pie", "donut", "area", "radar"] as ChartKind[]) {
       expect(chartToShapes(sampleFor(k).spec, sampleFor(k).data, RECT)).toEqual([]);
     }
+  });
+});
+
+describe("shapeMark treatment mapping", () => {
+  it("rounds capsule bars, outlines brutalist/monoSignal, leaves studioFlat flat", () => {
+    const base = sampleFor("bar").spec;
+    expect(shapeMark({ ...base, style: applyTreatment(base.style, "capsule") })).toEqual({ rounded: true });
+    expect(shapeMark({ ...base, style: applyTreatment(base.style, "brutalist") }).line).toBeTruthy();
+    expect(shapeMark({ ...base, style: applyTreatment(base.style, "monoSignal") }).line).toBeTruthy();
+    expect(shapeMark({ ...base, style: applyTreatment(base.style, "studioFlat") })).toEqual({ rounded: false });
+  });
+
+  it("carries the mark onto bar draws (capsule rounded, brutalist outlined)", () => {
+    const base = sampleFor("bar");
+    const capsuleBars = chartToShapes({ ...base.spec, style: applyTreatment(base.spec.style, "capsule") }, base.data, RECT).filter((d) => d.kind === "rect");
+    expect(capsuleBars.length).toBeGreaterThan(0);
+    expect(capsuleBars.every((d) => d.kind === "rect" && d.rounded === true)).toBe(true);
+    const brutalBars = chartToShapes({ ...base.spec, style: applyTreatment(base.spec.style, "brutalist") }, base.data, RECT).filter((d) => d.kind === "rect");
+    expect(brutalBars.every((d) => d.kind === "rect" && !!d.line)).toBe(true);
   });
 });
 

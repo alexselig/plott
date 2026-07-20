@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import PlottDataTab from "@/components/PlottDataTab";
 import StylePanel from "@/components/StylePanel";
 import { CHART_CATALOG, CHART_GROUP_LABELS, isChartKind } from "@/lib/charts/catalog";
 import ChartSVG from "@/lib/charts/ChartSVG";
 import { sampleFor } from "@/lib/charts/sample";
+import { applyTreatment, SHAPE_TREATMENTS, treatmentOf } from "@/lib/charts/styles";
 import { embedPngMetadata, stampEntries } from "@/lib/export/stamp";
 import { svgToPngBytes } from "@/lib/export/svg";
 import { commitVersion, createDocument, getVersion, stampFor } from "@/lib/id";
@@ -100,6 +101,9 @@ export default function AddinPane() {
   }, []);
 
   // Track what's selected on the slide so we only show the relevant action.
+  // PowerPoint's DocumentSelectionChanged is unreliable for shape/object selection,
+  // so we also poll — otherwise the buttons can reflect a stale selection (e.g.
+  // "Restyle" lingering after clicking away to a native chart).
   useEffect(() => {
     if (host !== "office") return;
     let cancelled = false;
@@ -110,11 +114,21 @@ export default function AddinPane() {
     };
     refresh();
     const off = onSelectionChanged(refresh);
+    const poll = setInterval(refresh, 1200);
     return () => {
       cancelled = true;
       off();
+      clearInterval(poll);
     };
   }, [host]);
+
+  function setInsertMode(mode: "image" | "shapes") {
+    setInsertAs(mode);
+    // Shapes mode only offers shape-safe treatments; snap to one if needed.
+    if (mode === "shapes") {
+      setSpec((s) => (SHAPE_TREATMENTS.includes(treatmentOf(s.style)) ? s : { ...s, style: applyTreatment(s.style, "studioFlat") }));
+    }
+  }
 
   function chooseKind(next: ChartKind) {
     const s = sampleFor(next);
@@ -144,7 +158,7 @@ export default function AddinPane() {
       }
       const match = await matchSelectedChart(powerPointBridge());
       if (!match) {
-        setStatus("No native chart found on the current slide.");
+        setStatus("Couldn't find a chart in this presentation.");
         return;
       }
       setRestyleDoc(null);
@@ -257,25 +271,10 @@ export default function AddinPane() {
     }
   }
 
-  const hostLabel = useMemo(() => {
-    if (host === "checking") return "Connecting…";
-    return host === "office" ? "PowerPoint" : "Browser preview";
-  }, [host]);
-
   return (
     <div className="mx-auto flex h-screen max-w-[460px] flex-col text-[13px]">
-      {/* Frozen: brand + live preview + insert actions. Everything else scrolls under it. */}
+      {/* Frozen: live preview + insert actions. Everything else scrolls under it. */}
       <div className="z-10 flex shrink-0 flex-col gap-2 border-b border-border bg-paper px-3 pb-2.5 pt-3 shadow-[0_6px_16px_-12px_rgba(0,0,0,0.4)]">
-        <header className="flex items-center justify-between">
-          <span className="plott-serif text-[20px] leading-none text-ink">Plott</span>
-          <span
-            className={`rounded-full border px-2 py-0.5 text-[11px] ${host === "office" ? "border-accent text-accent" : "border-border text-muted"}`}
-            title="Where this pane is running"
-          >
-            {hostLabel}
-          </span>
-        </header>
-
         {restyling && (
           <div className="flex items-center justify-between rounded-md border border-accent/40 bg-accent/5 px-3 py-1.5">
             <span className="text-muted">
@@ -300,28 +299,6 @@ export default function AddinPane() {
           style={{ aspectRatio: `${EXPORT_W} / ${EXPORT_H}`, maxHeight: 196 }}
         >
           <ChartSVG spec={spec} data={data} width={PREVIEW_W} height={PREVIEW_H} transparent={transparent} showTitle fluid />
-        </div>
-
-        <div className="flex items-center gap-2 text-[12px]">
-          <span className="text-muted">Insert as</span>
-          <div className="inline-flex overflow-hidden rounded-md border border-border">
-            {(["image", "shapes"] as const).map((m) => {
-              const disabled = m === "shapes" && !canShapes;
-              const active = effectiveInsertAs === m;
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  disabled={disabled}
-                  title={disabled ? "This chart type needs curves PowerPoint can't draw as shapes — use an image." : undefined}
-                  onClick={() => setInsertAs(m)}
-                  className={`px-3 py-1.5 ${active ? "bg-accent text-white" : "bg-panel text-ink"} ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
-                >
-                  {m === "image" ? "Image" : "Editable shapes"}
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         {restyling ? (
@@ -435,17 +412,48 @@ export default function AddinPane() {
         {tab === "data" ? (
           <PlottDataTab spec={spec} data={data} onChange={setData} />
         ) : (
-          <div className="flex flex-col gap-3">
-            <StylePanel kind={spec.kind} style={spec.style} onChange={(style) => setSpec((s) => ({ ...s, style }))} />
-            <label className="flex items-center gap-2 text-muted">
-              <input
-                type="checkbox"
-                checked={transparent}
-                onChange={(e) => setSpec((s) => ({ ...s, style: { ...s.style, transparentBackground: e.target.checked } }))}
-              />
-              Transparent background (for slides)
-            </label>
-          </div>
+          <StylePanel
+            kind={spec.kind}
+            style={spec.style}
+            onChange={(style) => setSpec((s) => ({ ...s, style }))}
+            treatments={effectiveInsertAs === "shapes" ? SHAPE_TREATMENTS : undefined}
+            beforeTreatments={
+              <div className="mb-[18px] flex flex-col gap-2.5 border-b border-rule pb-4">
+                <label className="flex items-center gap-2 text-muted">
+                  <input
+                    type="checkbox"
+                    checked={transparent}
+                    onChange={(e) => setSpec((s) => ({ ...s, style: { ...s.style, transparentBackground: e.target.checked } }))}
+                  />
+                  Transparent background (for slides)
+                </label>
+                <div className="flex items-center gap-2 text-[12px]">
+                  <span className="text-muted">Render as</span>
+                  <div className="inline-flex overflow-hidden rounded-md border border-border">
+                    {(["image", "shapes"] as const).map((m) => {
+                      const disabled = m === "shapes" && !canShapes;
+                      const active = effectiveInsertAs === m;
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          disabled={disabled}
+                          title={disabled ? "This chart type needs curves PowerPoint can't draw as shapes — use an image." : undefined}
+                          onClick={() => setInsertMode(m)}
+                          className={`px-3 py-1.5 ${active ? "bg-accent text-white" : "bg-panel text-ink"} ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
+                        >
+                          {m === "image" ? "Image" : "Editable shapes"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {effectiveInsertAs === "shapes" && (
+                  <p className="text-[11px] text-muted">Shape styles use solid fills, outlines &amp; rounded corners (no gradients/shadows — those are image-only).</p>
+                )}
+              </div>
+            }
+          />
         )}
       </div>
 

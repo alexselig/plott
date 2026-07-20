@@ -11,6 +11,7 @@ import type { OfficeBridge } from "@/lib/office/bridge";
 import { emuRectToPoints, type PointRect } from "@/lib/office/geometry";
 import { readPptx } from "@/lib/pptx";
 import { readSlidePreview } from "@/lib/pptx/slidePreview";
+import type { ExtractedChart } from "@/lib/pptx/types";
 import type { ChartSpec, DataTable } from "@/lib/types";
 
 export interface MatchedChart {
@@ -33,16 +34,38 @@ function withImportedPalette(spec: ChartSpec, palette: string[]): ChartSpec {
   };
 }
 
+/** Distance between a parsed chart's footprint and the selected shape (points). */
+function footprintDistance(chart: ExtractedChart, geo: PointRect): number {
+  const r = emuRectToPoints(chart.rect);
+  return Math.hypot(r.left - geo.left, r.top - geo.top) + Math.abs(r.width - geo.width) + Math.abs(r.height - geo.height);
+}
+
 /**
- * Read the native chart on the active slide (the first one, if several), returning
- * a Plott spec/data styled to match the slide background, plus the chart's slide
- * footprint. Returns null when the active slide has no native chart.
+ * Read the native chart that matches the current selection. PowerPoint's add-in API
+ * can't read chart data, so we pull the whole deck (getFileAsync) and reuse Plott's
+ * PPTX parser. The active slide index is only a hint — it's unreliable when a shape
+ * (not a slide) is selected — so we disambiguate by the selected shape's footprint,
+ * and fall back across the deck. Returns null only when the deck has no charts.
  */
 export async function matchSelectedChart(bridge: OfficeBridge): Promise<MatchedChart | null> {
-  const [bytes, slideIndex] = await Promise.all([bridge.getDocumentPptxBytes(), bridge.getSelectedSlideIndex()]);
+  const [bytes, slideIndex, sel] = await Promise.all([
+    bridge.getDocumentPptxBytes(),
+    bridge.getSelectedSlideIndex(),
+    bridge.readSelected(),
+  ]);
   const read = readPptx(bytes);
-  const pick = read.charts.find((c) => c.slideIndex === slideIndex) ?? null;
-  if (!pick) return null;
+  if (read.charts.length === 0) return null;
+
+  // Prefer charts on the active slide; if the index didn't resolve, consider all.
+  let candidates = read.charts.filter((c) => c.slideIndex === slideIndex);
+  if (candidates.length === 0) candidates = read.charts;
+
+  // Disambiguate multi-chart slides (and index mismatches) by the selected shape's
+  // footprint; otherwise take the first candidate.
+  const geo = sel?.geometry;
+  const pick = geo
+    ? candidates.reduce((best, c) => (footprintDistance(c, geo) < footprintDistance(best, geo) ? c : best), candidates[0])
+    : candidates[0];
 
   let bg = "#ffffff";
   try {
@@ -53,5 +76,5 @@ export async function matchSelectedChart(bridge: OfficeBridge): Promise<MatchedC
 
   const paletted = withImportedPalette(pick.spec, read.palette);
   const spec: ChartSpec = { ...paletted, style: { ...paletted.style, bg } };
-  return { spec, data: pick.data, title: pick.title, bg, rect: emuRectToPoints(pick.rect), slideIndex };
+  return { spec, data: pick.data, title: pick.title, bg, rect: emuRectToPoints(pick.rect), slideIndex: pick.slideIndex };
 }

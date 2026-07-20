@@ -121,10 +121,20 @@ export function powerPointBridge(): OfficeBridge {
             shape.fill.clear();
             shape.lineFormat.visible = false;
           } else {
-            const geo = d.kind === "ellipse" ? PowerPoint.GeometricShapeType.ellipse : PowerPoint.GeometricShapeType.rectangle;
+            const rounded = d.kind === "rect" && d.rounded;
+            const geo = d.kind === "ellipse"
+              ? PowerPoint.GeometricShapeType.ellipse
+              : rounded
+                ? PowerPoint.GeometricShapeType.roundRectangle
+                : PowerPoint.GeometricShapeType.rectangle;
             shape = shapes.addGeometricShape(geo, { left: d.left, top: d.top, width: d.width, height: d.height });
             shape.fill.setSolidColor(d.fill);
-            shape.lineFormat.visible = false;
+            if (d.line) {
+              shape.lineFormat.color = d.line.color;
+              shape.lineFormat.weight = d.line.weight;
+            } else {
+              shape.lineFormat.visible = false;
+            }
           }
           shape.tags.add("PLOTT_ROLE", d.role);
           created.push(shape);

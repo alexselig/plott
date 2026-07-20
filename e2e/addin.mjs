@@ -98,16 +98,21 @@ const check = (name, ok, detail = "") => {
 await page.goto(`${BASE}/addin`, { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(800);
 
-// ---- render + host detection ----
-check("host detected as PowerPoint", (await page.locator("header span:last-child").textContent())?.trim() === "PowerPoint");
+// ---- render ----
 check("chart preview renders", (await page.locator("svg").count()) > 0);
+check("Insert on slide is available", (await page.getByRole("button", { name: "Insert on slide" }).count()) === 1);
 await page.selectOption("select", "pie");
 await page.waitForTimeout(400);
 check("switching type re-renders (pie arcs)", (await page.locator("svg path").count()) > 5);
 await page.selectOption("select", "bar");
 await page.waitForTimeout(300);
 
-// ---- insert as editable shapes ----
+// ---- gating: nothing is selected yet, so neither on-slide action shows ----
+check("Restyle hidden until a Plott chart is selected", (await page.getByRole("button", { name: "Restyle selected chart" }).count()) === 0);
+check("Style Excel Chart hidden until a native chart is selected", (await page.getByRole("button", { name: "Style Excel Chart" }).count()) === 0);
+
+// ---- insert as editable shapes (the Render-as toggle lives in the Style tab) ----
+await page.getByRole("button", { name: "style", exact: true }).click();
 await page.getByRole("button", { name: "Editable shapes" }).click();
 await page.getByRole("button", { name: "Insert on slide" }).click();
 await page.waitForFunction(() => (window.__shapes?.length ?? 0) > 0 && !!window.__group?.PLOTT_ID, null, { timeout: 8000 });
@@ -146,9 +151,8 @@ check(
 );
 check("inserted shape has image bytes", snap[0].base64Len > 100);
 
-// ---- 2) selecting the Plott chart reveals + drives Restyle ----
+// ---- 2) the inserted Plott chart is selected → Restyle appears + drives ----
 const restyleBtn = page.getByRole("button", { name: "Restyle selected chart" });
-check("Restyle hidden until a Plott chart is selected", (await restyleBtn.count()) === 0);
 await page.evaluate(() => window.__fireSelection()); // the inserted image is the current selection
 await restyleBtn.waitFor({ state: "visible", timeout: 8000 });
 check("Restyle appears when a Plott chart is selected", true);
@@ -171,7 +175,7 @@ check("updated shape kept its footprint", Math.abs(snap[0].width - 553.1) < 2, `
 
 // ---- 4) selecting a native (Excel) chart reveals "Style Excel Chart" ----
 const styleExcelBtn = page.getByRole("button", { name: "Style Excel Chart" });
-check("Style Excel Chart hidden until a native chart is selected", (await styleExcelBtn.count()) === 0);
+check("Style Excel Chart stays hidden while a Plott chart is selected", (await styleExcelBtn.count()) === 0);
 await page.evaluate(() => window.__selectNative());
 await styleExcelBtn.waitFor({ state: "visible", timeout: 8000 });
 check("Style Excel Chart appears when a native chart is selected", true);

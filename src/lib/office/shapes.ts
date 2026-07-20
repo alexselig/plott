@@ -14,6 +14,7 @@ import { categories, seriesList } from "@/lib/charts/access";
 import { effectiveColor } from "@/lib/charts/colors";
 import { numericValues } from "@/lib/charts/access";
 import { valueDomain, axisTicks } from "@/lib/charts/scale";
+import { treatmentOf } from "@/lib/charts/styles";
 import type { PointRect } from "@/lib/office/geometry";
 import type { ChartKind, ChartSpec, DataTable } from "@/lib/types";
 
@@ -68,8 +69,8 @@ export function lineToRect(x1: number, y1: number, x2: number, y2: number, weigh
 }
 
 export type ShapeDraw =
-  | { kind: "rect"; left: number; top: number; width: number; height: number; fill: string; role: string }
-  | { kind: "ellipse"; left: number; top: number; width: number; height: number; fill: string; role: string }
+  | { kind: "rect"; left: number; top: number; width: number; height: number; fill: string; role: string; rounded?: boolean; line?: { color: string; weight: number } }
+  | { kind: "ellipse"; left: number; top: number; width: number; height: number; fill: string; role: string; line?: { color: string; weight: number } }
   | { kind: "line"; x1: number; y1: number; x2: number; y2: number; color: string; weight: number; role: string }
   | {
       kind: "text";
@@ -197,12 +198,31 @@ function catLabels(plot: Plot, cats: string[], slot: number): ShapeDraw[] {
   }));
 }
 
+/** Per-treatment shape formatting achievable on native shapes (corner + outline). */
+export interface ShapeMark {
+  rounded: boolean;
+  line?: { color: string; weight: number };
+}
+export function shapeMark(spec: ChartSpec): ShapeMark {
+  switch (treatmentOf(spec.style)) {
+    case "capsule":
+      return { rounded: true };
+    case "brutalist":
+      return { rounded: false, line: { color: "#161616", weight: 2.5 } };
+    case "monoSignal":
+      return { rounded: false, line: { color: "#cfc8ba", weight: 0.75 } };
+    default:
+      return { rounded: false };
+  }
+}
+
 function verticalBars(spec: ChartSpec, data: DataTable, rect: PointRect, stacked: boolean): ShapeDraw[] {
   const { plot, hasTitle } = plotBox(spec, rect, false);
   const cats = categories(data, spec.encoding.x);
   const series = seriesList(data, spec);
   const n = Math.max(1, cats.length);
   const s = Math.max(1, series.length);
+  const mark = shapeMark(spec);
 
   const dataMax = stacked
     ? Math.max(0, ...cats.map((_, i) => series.reduce((sum, se) => sum + Math.max(0, se.values[i] ?? 0), 0)))
@@ -224,7 +244,7 @@ function verticalBars(spec: ChartSpec, data: DataTable, rect: PointRect, stacked
         const yTop = yOf(acc + v);
         const h = yOf(acc) - yTop;
         acc += v;
-        if (h > 0) draws.push({ kind: "rect", left: x, top: yTop, width: bw, height: h, fill: effectiveColor(spec, j), role: `bar s${j} c${i}` });
+        if (h > 0) draws.push({ kind: "rect", left: x, top: yTop, width: bw, height: h, fill: effectiveColor(spec, j), role: `bar s${j} c${i}`, rounded: mark.rounded, line: mark.line });
       }
     } else {
       const groupW = slot * 0.72;
@@ -235,7 +255,7 @@ function verticalBars(spec: ChartSpec, data: DataTable, rect: PointRect, stacked
         const yTop = yOf(Math.max(0, v));
         const h = Math.abs(yOf(v) - yOf(0));
         const fill = effectiveColor(spec, single ? i : j);
-        if (h > 0) draws.push({ kind: "rect", left: x, top: yTop, width: bw * 0.9, height: h, fill, role: `bar s${j} c${i}` });
+        if (h > 0) draws.push({ kind: "rect", left: x, top: yTop, width: bw * 0.9, height: h, fill, role: `bar s${j} c${i}`, rounded: mark.rounded, line: mark.line });
       }
     }
   }
@@ -256,13 +276,14 @@ function horizontalBars(spec: ChartSpec, data: DataTable, rect: PointRect): Shap
 
   const draws: ShapeDraw[] = [...titleDraw(spec, rect, hasTitle)];
   const s0 = series[0]?.values ?? [];
+  const mark = shapeMark(spec);
   for (let i = 0; i < cats.length; i++) {
     const v = s0[i] ?? 0;
     const bh = slot * 0.62;
     const y = plot.iy + i * slot + (slot - bh) / 2;
     const x0 = xOf(0);
     const w = Math.abs(xOf(v) - x0);
-    if (w > 0) draws.push({ kind: "rect", left: x0, top: y, width: w, height: bh, fill: effectiveColor(spec, single ? i : 0), role: `bar c${i}` });
+    if (w > 0) draws.push({ kind: "rect", left: x0, top: y, width: w, height: bh, fill: effectiveColor(spec, single ? i : 0), role: `bar c${i}`, rounded: mark.rounded, line: mark.line });
     draws.push({ kind: "text", left: rect.left + 4, top: y + bh / 2 - 7, width: plot.ix - rect.left - 8, height: 14, text: cats[i], size: 8, color: LABEL_COLOR, align: "Right", role: "y-label" });
   }
   draws.push(

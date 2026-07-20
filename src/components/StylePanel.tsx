@@ -11,6 +11,7 @@ import {
   TREATMENTS,
   treatmentOf,
   type PaletteKey,
+  type TreatmentKey,
 } from "@/lib/charts/styles";
 import type { ChartKind, ChartSpec, ChartStyle, DataTable } from "@/lib/types";
 
@@ -42,10 +43,16 @@ export default function StylePanel({
   kind,
   style,
   onChange,
+  treatments = TREATMENT_ORDER,
+  beforeTreatments,
 }: {
   kind: ChartKind;
   style: ChartStyle;
   onChange: (style: ChartStyle) => void;
+  /** Which treatments to offer (defaults to all); the add-in restricts this in shapes mode. */
+  treatments?: readonly TreatmentKey[];
+  /** Optional controls rendered between the palette row and the treatment gallery. */
+  beforeTreatments?: React.ReactNode;
 }) {
   const paletteKey: PaletteKey = isPaletteKey(style.paletteName ?? "")
     ? (style.paletteName as PaletteKey)
@@ -103,10 +110,13 @@ export default function StylePanel({
         </div>
       </div>
 
+      {/* optional controls (e.g. transparent + image/shapes mode) between palette and treatments */}
+      {beforeTreatments}
+
       {/* treatments */}
       <div className="plott-mono mb-3 text-[10px] uppercase tracking-[0.12em] text-faint">Treatment</div>
       <div className="grid grid-cols-2 gap-3">
-        {TREATMENT_ORDER.map((key) => {
+        {treatments.map((key) => {
           const active = activeTreatment === key;
           const previewStyle = applyTreatment(style, key);
           return (

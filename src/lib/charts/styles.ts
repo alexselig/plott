@@ -108,6 +108,15 @@ export const TREATMENT_ORDER = [
 ] as const;
 export type TreatmentKey = (typeof TREATMENT_ORDER)[number];
 
+/**
+ * Treatments that render acceptably as NATIVE PowerPoint shapes. PowerPoint's
+ * add-in API only exposes solid fill + line (color/weight) + rectangle-vs-
+ * roundRectangle corners on a shape — no gradients, textures, shadows, or glow —
+ * so "Editable shapes" mode offers only these flat/rounded/outlined looks. The
+ * richer treatments stay image-only.
+ */
+export const SHAPE_TREATMENTS: TreatmentKey[] = ["studioFlat", "capsule", "brutalist", "monoSignal"];
+
 export const TREATMENTS: Record<TreatmentKey, Treatment> = {
   studioFlat: {
     name: "Studio Flat",
