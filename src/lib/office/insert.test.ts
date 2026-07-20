@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { OfficeBridge } from "@/lib/office/bridge";
 import type { PointRect } from "@/lib/office/geometry";
-import { insertChart, readSelectedChart, replaceSelectedChart } from "@/lib/office/insert";
+import { insertChart, insertChartShapes, readSelectedChart, replaceSelectedChart } from "@/lib/office/insert";
+import type { ShapeDraw } from "@/lib/office/shapes";
 import { stampToTags, TAG_ID, TAG_VERSION } from "@/lib/office/tags";
+import { sampleFor } from "@/lib/charts/sample";
 import type { ExportStamp } from "@/lib/types";
 
 interface FakeShape {
@@ -17,6 +19,7 @@ class FakeBridge implements OfficeBridge {
   selected: FakeShape | null;
   inserted: FakeShape[] = [];
   deleted: FakeShape[] = [];
+  shapeGroups: { draws: ShapeDraw[]; tags: Record<string, string> }[] = [];
 
   constructor(selected: FakeShape | null = null) {
     this.selected = selected;
@@ -44,6 +47,10 @@ class FakeBridge implements OfficeBridge {
     if (!this.selected) return;
     this.deleted.push(this.selected);
     this.selected = null;
+  }
+
+  async insertShapes(draws: ShapeDraw[], tags: Record<string, string>): Promise<void> {
+    this.shapeGroups.push({ draws, tags });
   }
 }
 
@@ -114,5 +121,28 @@ describe("replaceSelectedChart", () => {
     expect(await replaceSelectedChart(bridge, png, stamp)).toBe(false);
     expect(bridge.inserted).toHaveLength(0);
     expect(bridge.deleted).toHaveLength(0);
+  });
+});
+
+describe("insertChartShapes", () => {
+  it("inserts native shapes tagged with the chart identity for a supported kind", async () => {
+    const bridge = new FakeBridge();
+    const { spec, data } = sampleFor("bar");
+    const ok = await insertChartShapes(bridge, spec, data, { stamp, aspect: 760 / 460 });
+
+    expect(ok).toBe(true);
+    expect(bridge.shapeGroups).toHaveLength(1);
+    const group = bridge.shapeGroups[0];
+    expect(group.draws.length).toBeGreaterThan(0);
+    expect(group.draws.some((d) => d.kind === "rect")).toBe(true);
+    expect(group.tags[TAG_ID]).toBe("PLT-7Q2F");
+    expect(group.tags[TAG_VERSION]).toBe("3");
+  });
+
+  it("returns false (no shapes drawn) for a freeform-only kind like pie", async () => {
+    const bridge = new FakeBridge();
+    const { spec, data } = sampleFor("pie");
+    expect(await insertChartShapes(bridge, spec, data, { stamp, aspect: 760 / 460 })).toBe(false);
+    expect(bridge.shapeGroups).toHaveLength(0);
   });
 });

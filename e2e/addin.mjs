@@ -31,14 +31,42 @@ const OFFICE_MOCK = `
     HostType: { PowerPoint: 'PowerPoint' },
     CoercionType: { Image: 'image' },
     AsyncResultStatus: { Succeeded: 'succeeded' },
-    context: { host: 'PowerPoint', document: {
-      setSelectedDataAsync(data, opts, cb){ const s = makeShape(); s._base64 = data; model.shapes.push(s); model.selected = s; cb({ status: 'succeeded' }); },
-    }},
+    GeometricShapeType: { rectangle: 'Rectangle', ellipse: 'Ellipse' },
+    ConnectorType: { straight: 'Straight' },
+    context: {
+      host: 'PowerPoint',
+      requirements: { isSetSupported: () => true },
+      document: {
+        setSelectedDataAsync(data, opts, cb){ const s = makeShape(); s._base64 = data; model.shapes.push(s); model.selected = s; cb({ status: 'succeeded' }); },
+      },
+    },
     onReady(cb){ cb({ host: 'PowerPoint' }); },
   };
+  // native-shape insertion model
+  window.__shapes = [];
+  window.__group = null;
+  function makeChild(rec) {
+    const tagsMap = {};
+    return {
+      fill: { setSolidColor(){}, clear(){} },
+      lineFormat: {}, textFrame: { textRange: { font: {}, paragraphFormat: {} } },
+      tags: { add(k, v){ tagsMap[k] = v; if (rec) rec.tags = tagsMap; } },
+    };
+  }
+  const shapesApi = {
+    addGeometricShape(geo, opts){ const rec = { type: geo === 'Ellipse' ? 'ellipse' : 'rect', geo, opts }; window.__shapes.push(rec); return makeChild(rec); },
+    addLine(type, opts){ const rec = { type: 'line', opts }; window.__shapes.push(rec); return makeChild(rec); },
+    addTextBox(text, opts){ const rec = { type: 'text', text, opts }; window.__shapes.push(rec); return makeChild(rec); },
+    addGroup(arr){ const g = {}; window.__group = {}; return { tags: { add(k, v){ window.__group[k] = v; } } }; },
+  };
   window.PowerPoint = {
+    GeometricShapeType: { rectangle: 'Rectangle', ellipse: 'Ellipse' },
+    ConnectorType: { straight: 'Straight' },
     run: async (cb) => cb({
-      presentation: { getSelectedShapes: () => ({ load(){}, get items(){ return model.selected ? [model.selected] : []; } }) },
+      presentation: {
+        getSelectedShapes: () => ({ load(){}, get items(){ return model.selected ? [model.selected] : []; } }),
+        getSelectedSlides: () => ({ getItemAt: () => ({ shapes: shapesApi }) }),
+      },
       sync: async () => {},
     }),
   };
@@ -46,7 +74,7 @@ const OFFICE_MOCK = `
 `;
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+const ctx = await browser.newContext({ viewport: { width: 420, height: 900 }, ignoreHTTPSErrors: true });
 const page = await ctx.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
@@ -70,6 +98,23 @@ await page.waitForTimeout(400);
 check("switching type re-renders (pie arcs)", (await page.locator("svg path").count()) > 5);
 await page.selectOption("select", "bar");
 await page.waitForTimeout(300);
+
+// ---- insert as editable shapes ----
+await page.getByRole("button", { name: "Editable shapes" }).click();
+await page.getByRole("button", { name: "Insert on slide" }).click();
+await page.waitForFunction(() => (window.__shapes?.length ?? 0) > 0 && !!window.__group?.PLOTT_ID, null, { timeout: 8000 });
+const shapeInfo = await page.evaluate(() => ({ n: window.__shapes.length, hasRect: window.__shapes.some((s) => s.type === "rect"), group: window.__group }));
+check("editable shapes inserted (rectangles present)", shapeInfo.n > 0 && shapeInfo.hasRect, `n=${shapeInfo.n}`);
+check("shape group tagged with the chart id", /^PLT-/.test(shapeInfo.group?.PLOTT_ID || ""), shapeInfo.group?.PLOTT_ID);
+check("pie disables the Editable-shapes option", await (async () => {
+  await page.selectOption("select", "pie");
+  await page.waitForTimeout(200);
+  const disabled = await page.getByRole("button", { name: "Editable shapes" }).isDisabled();
+  await page.selectOption("select", "bar");
+  await page.getByRole("button", { name: "Image", exact: true }).click();
+  await page.waitForTimeout(200);
+  return disabled;
+})());
 
 // ---- 1) insert a chart onto the slide ----
 await page.getByRole("button", { name: "Insert on slide" }).click();

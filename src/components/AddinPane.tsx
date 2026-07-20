@@ -12,7 +12,8 @@ import { svgToPngBytes } from "@/lib/export/svg";
 import { commitVersion, createDocument, getVersion, stampFor } from "@/lib/id";
 import { powerPointBridge } from "@/lib/office/bridge";
 import { isOfficeHost, loadOfficeJs, officeReady } from "@/lib/office/host";
-import { insertChart, readSelectedChart, replaceSelectedChart } from "@/lib/office/insert";
+import { insertChart, insertChartShapes, readSelectedChart, replaceSelectedChart } from "@/lib/office/insert";
+import { supportsShapes } from "@/lib/office/shapes";
 import { getDocument, saveDocument } from "@/lib/store/db";
 import type { ChartDocument, ChartKind, ChartSpec, DataTable } from "@/lib/types";
 
@@ -40,13 +41,17 @@ export default function AddinPane() {
   const [spec, setSpec] = useState<ChartSpec>(() => structuredClone(seedSpec));
   const [data, setData] = useState<DataTable>(() => structuredClone(seedData));
   const [tab, setTab] = useState<"data" | "style">("data");
+  const [insertAs, setInsertAs] = useState<"image" | "shapes">("image");
   const [restyleDoc, setRestyleDoc] = useState<ChartDocument | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>("");
+
   const exportRef = useRef<SVGSVGElement>(null);
 
   const transparent = !!spec.style.transparentBackground;
   const restyling = !!restyleDoc;
+  const canShapes = supportsShapes(spec.kind);
+  const effectiveInsertAs = canShapes ? insertAs : "image";
 
   // Load Office.js on demand, then detect whether we're inside PowerPoint.
   useEffect(() => {
@@ -94,13 +99,22 @@ export default function AddinPane() {
     try {
       const doc = createDocument(structuredClone(spec), structuredClone(data), spec.title);
       await saveDocument(doc); // persist so "Restyle" can resolve this chart later
-      const bytes = await rasterize(doc);
-      if (isOfficeHost()) {
-        await insertChart(powerPointBridge(), bytes, { stamp: stampFor(doc), aspect: ASPECT });
-        setStatus(`Inserted ${doc.id} on the slide.`);
-      } else {
+      if (!isOfficeHost()) {
         setStatus(`Saved ${doc.id}. Open this pane in PowerPoint to place it on a slide.`);
+        return;
       }
+      const stamp = stampFor(doc);
+      if (effectiveInsertAs === "shapes") {
+        const ok = await insertChartShapes(powerPointBridge(), spec, data, { stamp, aspect: ASPECT });
+        if (ok) {
+          setStatus(`Inserted ${doc.id} as editable shapes.`);
+          return;
+        }
+        // supportsShapes gates the UI, so this is belt-and-suspenders → fall back to image.
+      }
+      const bytes = await rasterize(doc);
+      await insertChart(powerPointBridge(), bytes, { stamp, aspect: ASPECT });
+      setStatus(`Inserted ${doc.id} on the slide.`);
     } catch (e) {
       setStatus(errMsg(e));
     } finally {
@@ -265,6 +279,30 @@ export default function AddinPane() {
       </div>
 
       <div className="sticky bottom-0 flex flex-col gap-2 border-t border-border bg-paper pt-3">
+        <div className="flex items-center gap-2 text-[12px]">
+          <span className="text-muted">Insert as</span>
+          <div className="inline-flex overflow-hidden rounded-md border border-border">
+            {(["image", "shapes"] as const).map((m) => {
+              const disabled = m === "shapes" && !canShapes;
+              const active = effectiveInsertAs === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  disabled={disabled}
+                  title={disabled ? "This chart type needs curves PowerPoint can't draw as shapes — use an image." : undefined}
+                  onClick={() => setInsertAs(m)}
+                  className={`px-3 py-1.5 ${active ? "bg-accent text-white" : "bg-panel text-ink"} ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
+                >
+                  {m === "image" ? "Image" : "Editable shapes"}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {effectiveInsertAs === "shapes" && (
+          <p className="text-[11px] text-muted">Shapes use a flat rendering of the palette (treatment textures are image-only).</p>
+        )}
         {restyling ? (
           <div className="flex gap-2">
             <button

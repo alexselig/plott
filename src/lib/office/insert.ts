@@ -8,9 +8,10 @@
 import type { OfficeBridge } from "@/lib/office/bridge";
 import { defaultInsertRect } from "@/lib/office/geometry";
 import { base64FromBytes } from "@/lib/office/host";
+import { chartToShapes, supportsShapes } from "@/lib/office/shapes";
 import { stampToTags, tagsToRef } from "@/lib/office/tags";
 import type { StampRef } from "@/lib/reopen";
-import type { ExportStamp } from "@/lib/types";
+import type { ChartSpec, DataTable, ExportStamp } from "@/lib/types";
 
 export interface InsertOptions {
   /** Identity to tag onto the shape so it can be restyled later. */
@@ -27,6 +28,24 @@ export async function insertChart(
 ): Promise<void> {
   await bridge.insertImageBase64(base64FromBytes(pngBytes));
   await bridge.styleSelected(defaultInsertRect(aspect), stampToTags(stamp));
+}
+
+/**
+ * Insert the chart as native, editable PowerPoint shapes (grouped + tagged), sized
+ * to the same footprint as the image insert. Returns false for chart kinds that
+ * can't be expressed without freeform paths (caller should fall back to image).
+ */
+export async function insertChartShapes(
+  bridge: OfficeBridge,
+  spec: ChartSpec,
+  data: DataTable,
+  { stamp, aspect }: InsertOptions,
+): Promise<boolean> {
+  if (!supportsShapes(spec.kind)) return false;
+  const draws = chartToShapes(spec, data, defaultInsertRect(aspect));
+  if (draws.length === 0) return false;
+  await bridge.insertShapes(draws, stampToTags(stamp));
+  return true;
 }
 
 /** The chart reference of the currently selected shape, or null if it isn't ours. */
