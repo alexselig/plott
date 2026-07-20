@@ -13,11 +13,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:https": "next dev --experimental-https",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:e2e": "node e2e/interact.mjs"
+    "test:e2e": "node e2e/interact.mjs",
+    "manifest": "node scripts/make-manifest.mjs"
   },
   "dependencies": {
     "@azure/msal-browser": "^5.17.0",
@@ -41,6 +43,7 @@
     "@types/d3-scale": "^4.0.9",
     "@types/d3-shape": "^3.1.8",
     "@types/node": "^20",
+    "@types/office-js": "^1.0.599",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",

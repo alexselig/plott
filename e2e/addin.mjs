@@ -1,0 +1,112 @@
+// End-to-end coverage of the PowerPoint task-pane add-in (/addin). Runs against a
+// dev server with a faithful in-page Office.js mock, so it exercises the real
+// UI -> insert.ts -> bridge.ts path without a live PowerPoint host.
+//   BASE_URL=http://localhost:3000 node e2e/addin.mjs
+import { chromium } from "playwright";
+
+const BASE = process.env.BASE_URL || "http://localhost:3000";
+
+// Stand-in for the Office.js surface bridge.ts uses, backed by a tiny slide model.
+const OFFICE_MOCK = `
+(() => {
+  const model = { shapes: [], selected: null };
+  window.__model = model;
+  window.__select = (i) => { model.selected = model.shapes[i] ?? null; };
+  window.__snapshot = () => model.shapes.map(s => ({
+    left: s.left, top: s.top, width: s.width, height: s.height,
+    base64Len: (s._base64 || '').length,
+    tags: Object.fromEntries(s.tags.items.map(t => [t.key, t.value])),
+  }));
+  function makeShape() {
+    const tagsMap = {};
+    const shape = {
+      left: 0, top: 0, width: 72, height: 72, _base64: null,
+      tags: { add(k, v){ tagsMap[k] = v; }, load(){}, get items(){ return Object.keys(tagsMap).map(k => ({ key: k, value: tagsMap[k] })); } },
+      load(){},
+      delete(){ const i = model.shapes.indexOf(shape); if (i>=0) model.shapes.splice(i,1); if (model.selected===shape) model.selected=null; },
+    };
+    return shape;
+  }
+  window.Office = {
+    HostType: { PowerPoint: 'PowerPoint' },
+    CoercionType: { Image: 'image' },
+    AsyncResultStatus: { Succeeded: 'succeeded' },
+    context: { host: 'PowerPoint', document: {
+      setSelectedDataAsync(data, opts, cb){ const s = makeShape(); s._base64 = data; model.shapes.push(s); model.selected = s; cb({ status: 'succeeded' }); },
+    }},
+    onReady(cb){ cb({ host: 'PowerPoint' }); },
+  };
+  window.PowerPoint = {
+    run: async (cb) => cb({
+      presentation: { getSelectedShapes: () => ({ load(){}, get items(){ return model.selected ? [model.selected] : []; } }) },
+      sync: async () => {},
+    }),
+  };
+})();
+`;
+
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ viewport: { width: 420, height: 900 } });
+const page = await ctx.newPage();
+const errors = [];
+page.on("pageerror", (e) => errors.push(String(e)));
+await page.route("**/office.js", (r) => r.fulfill({ status: 200, contentType: "application/javascript", body: "" }));
+await page.addInitScript(OFFICE_MOCK);
+
+const results = [];
+const check = (name, ok, detail = "") => {
+  results.push(ok);
+  console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  — " + detail : ""}`);
+};
+
+await page.goto(`${BASE}/addin`, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(800);
+
+// ---- render + host detection ----
+check("host detected as PowerPoint", (await page.locator("header span:last-child").textContent())?.trim() === "PowerPoint");
+check("chart preview renders", (await page.locator("svg").count()) > 0);
+await page.selectOption("select", "pie");
+await page.waitForTimeout(400);
+check("switching type re-renders (pie arcs)", (await page.locator("svg path").count()) > 5);
+await page.selectOption("select", "bar");
+await page.waitForTimeout(300);
+
+// ---- 1) insert a chart onto the slide ----
+await page.getByRole("button", { name: "Insert on slide" }).click();
+await page.waitForFunction(() => (window.__model?.shapes.length ?? 0) === 1, null, { timeout: 8000 });
+let snap = await page.evaluate(() => window.__snapshot());
+check("one shape inserted", snap.length === 1);
+const insertedId = snap[0]?.tags?.PLOTT_ID;
+check("inserted shape carries PLOTT_ID tag", !!insertedId && /^PLT-/.test(insertedId), insertedId);
+check("inserted shape tagged version 1", snap[0]?.tags?.PLOTT_VERSION === "1");
+check(
+  "inserted shape sized to fit, aspect preserved",
+  Math.abs(snap[0].width - 553.1) < 2 && Math.abs(snap[0].height - 334.8) < 2 && Math.abs(snap[0].width / snap[0].height - 760 / 460) < 0.02,
+  `${snap[0].width}×${snap[0].height}`,
+);
+check("inserted shape has image bytes", snap[0].base64Len > 100);
+
+// ---- 2) select it and restyle ----
+await page.evaluate(() => window.__select(0));
+await page.getByRole("button", { name: "Restyle selected chart" }).click();
+await page.locator("div.sticky p", { hasText: "Restyling" }).waitFor({ timeout: 8000 });
+check("restyle loaded the selected chart", (await page.locator("div.sticky p").textContent())?.includes(insertedId));
+
+// ---- 3) recolor then update in place ----
+await page.getByRole("button", { name: "style", exact: true }).click();
+await page.waitForTimeout(200);
+const forest = page.locator('[aria-label="Palette Forest"]');
+if (await forest.count()) await forest.click();
+await page.getByRole("button", { name: "Update on slide" }).click();
+await page.locator("div.sticky p", { hasText: "(v2)" }).waitFor({ timeout: 8000 });
+snap = await page.evaluate(() => window.__snapshot());
+check("still one shape after in-place update", snap.length === 1, `count=${snap.length}`);
+check("updated shape keeps the same chart id", snap[0]?.tags?.PLOTT_ID === insertedId, snap[0]?.tags?.PLOTT_ID);
+check("updated shape bumped to version 2", snap[0]?.tags?.PLOTT_VERSION === "2", snap[0]?.tags?.PLOTT_VERSION);
+check("updated shape kept its footprint", Math.abs(snap[0].width - 553.1) < 2, `${snap[0].width}`);
+
+check("no page errors", errors.length === 0, errors[0] ?? "");
+const passed = results.filter(Boolean).length;
+console.log(`\n${passed}/${results.length} checks passed`);
+await browser.close();
+process.exit(passed === results.length ? 0 : 1);
