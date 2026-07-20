@@ -167,7 +167,7 @@ export default function AddinPane() {
       setData(structuredClone(match.data));
       setNativeRect(match.rect);
       setTab("style");
-      setStatus(`Pulled the chart from slide ${match.slideIndex + 1}, matched to its background. Style it, then Insert to overlay.`);
+      setStatus(`Pulled “${match.title || "chart"}” (${match.data.rows.length} rows) from slide ${match.slideIndex + 1}. Style it, then Insert to overlay.`);
     } catch (e) {
       setStatus(errMsg(e));
     } finally {

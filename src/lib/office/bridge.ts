@@ -160,32 +160,34 @@ export function powerPointBridge(): OfficeBridge {
           }
           const file = fileRes.value;
           const count = file.sliceCount;
-          const slices: Uint8Array[] = new Array(count);
-          let received = 0;
-          let failed = false;
-          for (let i = 0; i < count; i++) {
+          const slices: Uint8Array[] = [];
+          // Fetch slices sequentially. Concurrent getSliceAsync calls are unreliable
+          // in some hosts (notably PowerPoint on Mac) and can silently drop slices.
+          const fetchNext = (i: number) => {
+            if (i >= count) {
+              file.closeAsync(() => {});
+              const total = slices.reduce((n, s) => n + s.length, 0);
+              const out = new Uint8Array(total);
+              let off = 0;
+              for (const s of slices) {
+                out.set(s, off);
+                off += s.length;
+              }
+              resolve(out);
+              return;
+            }
             file.getSliceAsync(i, (sliceRes) => {
-              if (failed) return;
               if (sliceRes.status !== Office.AsyncResultStatus.Succeeded) {
-                failed = true;
                 file.closeAsync(() => {});
-                reject(new Error(sliceRes.error?.message ?? "Couldn't read the presentation file."));
+                reject(new Error(sliceRes.error?.message ?? "Couldn't read a slice of the presentation."));
                 return;
               }
-              slices[sliceRes.value.index] = new Uint8Array(sliceRes.value.data as ArrayLike<number>);
-              if (++received === count) {
-                file.closeAsync(() => {});
-                const total = slices.reduce((n, s) => n + s.length, 0);
-                const out = new Uint8Array(total);
-                let off = 0;
-                for (const s of slices) {
-                  out.set(s, off);
-                  off += s.length;
-                }
-                resolve(out);
-              }
+              const data = sliceRes.value.data as Uint8Array | ArrayLike<number>;
+              slices.push(data instanceof Uint8Array ? data : new Uint8Array(data));
+              fetchNext(i + 1);
             });
-          }
+          };
+          fetchNext(0);
         });
       });
     },
