@@ -38,10 +38,12 @@ const OFFICE_MOCK = `
       requirements: { isSetSupported: () => true },
       document: {
         setSelectedDataAsync(data, opts, cb){ const s = makeShape(); s._base64 = data; model.shapes.push(s); model.selected = s; cb({ status: 'succeeded' }); },
+        getFileAsync(type, opts, cb){ const bytes = new Uint8Array([1,2,3,4]); const file = { sliceCount: 1, getSliceAsync(i, scb){ scb({ status: 'succeeded', value: { index: 0, data: bytes } }); }, closeAsync(ccb){ if (ccb) ccb({ status: 'succeeded' }); } }; cb({ status: 'succeeded', value: file }); },
       },
     },
     onReady(cb){ cb({ host: 'PowerPoint' }); },
   };
+  Office.FileType = { Compressed: 'compressed' };
   // native-shape insertion model
   window.__shapes = [];
   window.__group = null;
@@ -65,7 +67,7 @@ const OFFICE_MOCK = `
     run: async (cb) => cb({
       presentation: {
         getSelectedShapes: () => ({ load(){}, get items(){ return model.selected ? [model.selected] : []; } }),
-        getSelectedSlides: () => ({ getItemAt: () => ({ shapes: shapesApi }) }),
+        getSelectedSlides: () => ({ getItemAt: () => ({ load(){}, get index(){ return 1; }, shapes: shapesApi }) }),
       },
       sync: async () => {},
     }),
@@ -149,6 +151,11 @@ check("still one shape after in-place update", snap.length === 1, `count=${snap.
 check("updated shape keeps the same chart id", snap[0]?.tags?.PLOTT_ID === insertedId, snap[0]?.tags?.PLOTT_ID);
 check("updated shape bumped to version 2", snap[0]?.tags?.PLOTT_VERSION === "2", snap[0]?.tags?.PLOTT_VERSION);
 check("updated shape kept its footprint", Math.abs(snap[0].width - 553.1) < 2, `${snap[0].width}`);
+
+// ---- 4) match selected chart: button wired + graceful handling ----
+await page.getByRole("button", { name: /^Match selected chart/ }).click();
+await page.waitForFunction(() => (document.querySelector("div.sticky p")?.textContent || "").length > 0, null, { timeout: 8000 });
+check("match-selected-chart is wired and handles the request", ((await page.locator("div.sticky p").textContent()) || "").length > 0);
 
 check("no page errors", errors.length === 0, errors[0] ?? "");
 const passed = results.filter(Boolean).length;

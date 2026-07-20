@@ -192,10 +192,11 @@ export function treatmentOf(style: ChartStyle): TreatmentKey {
 /** Constant app page background behind the chart card (`--paper`). */
 export const CHART_PAGE_BG = "#f5f0e6";
 
-/** The solid background color the chart SVG paints (the treatment's card). */
+/** The solid background color the chart SVG paints (the treatment's card, or an
+ *  explicit `style.bg` override — e.g. matched to a slide's background color). */
 export function cardBg(style: ChartStyle): string {
   const c = TREATMENTS[treatmentOf(style)].chrome;
-  return c.cardSolid ?? c.card;
+  return style.bg ?? c.cardSolid ?? c.card;
 }
 
 /**

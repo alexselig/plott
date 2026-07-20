@@ -52,6 +52,14 @@ class FakeBridge implements OfficeBridge {
   async insertShapes(draws: ShapeDraw[], tags: Record<string, string>): Promise<void> {
     this.shapeGroups.push({ draws, tags });
   }
+
+  async getDocumentPptxBytes(): Promise<Uint8Array> {
+    return new Uint8Array();
+  }
+
+  async getSelectedSlideIndex(): Promise<number> {
+    return 0;
+  }
 }
 
 const stamp: ExportStamp = {

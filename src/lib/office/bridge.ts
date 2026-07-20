@@ -21,6 +21,10 @@ export interface OfficeBridge {
   deleteSelected(): Promise<void>;
   /** Create native shapes for a chart, group them, and tag the group. */
   insertShapes(draws: ShapeDraw[], tags: Record<string, string>): Promise<void>;
+  /** The whole presentation as `.pptx` bytes (to read a native chart's data). */
+  getDocumentPptxBytes(): Promise<Uint8Array>;
+  /** 0-based index of the currently active slide. */
+  getSelectedSlideIndex(): Promise<number>;
 }
 
 /** Real bridge backed by Office.js / PowerPoint.run. */
@@ -121,6 +125,55 @@ export function powerPointBridge(): OfficeBridge {
           for (const [key, value] of Object.entries(tags)) group.tags.add(key, value);
           await context.sync();
         }
+      });
+    },
+
+    getDocumentPptxBytes() {
+      return new Promise<Uint8Array>((resolve, reject) => {
+        Office.context.document.getFileAsync(Office.FileType.Compressed, { sliceSize: 65536 }, (fileRes) => {
+          if (fileRes.status !== Office.AsyncResultStatus.Succeeded) {
+            reject(new Error(fileRes.error?.message ?? "Couldn't read the presentation file."));
+            return;
+          }
+          const file = fileRes.value;
+          const count = file.sliceCount;
+          const slices: Uint8Array[] = new Array(count);
+          let received = 0;
+          let failed = false;
+          for (let i = 0; i < count; i++) {
+            file.getSliceAsync(i, (sliceRes) => {
+              if (failed) return;
+              if (sliceRes.status !== Office.AsyncResultStatus.Succeeded) {
+                failed = true;
+                file.closeAsync(() => {});
+                reject(new Error(sliceRes.error?.message ?? "Couldn't read the presentation file."));
+                return;
+              }
+              slices[sliceRes.value.index] = new Uint8Array(sliceRes.value.data as ArrayLike<number>);
+              if (++received === count) {
+                file.closeAsync(() => {});
+                const total = slices.reduce((n, s) => n + s.length, 0);
+                const out = new Uint8Array(total);
+                let off = 0;
+                for (const s of slices) {
+                  out.set(s, off);
+                  off += s.length;
+                }
+                resolve(out);
+              }
+            });
+          }
+        });
+      });
+    },
+
+    getSelectedSlideIndex() {
+      return PowerPoint.run(async (context) => {
+        const slide = context.presentation.getSelectedSlides().getItemAt(0);
+        slide.load("index");
+        await context.sync();
+        // PowerPoint's slide.index is 1-based; normalize to 0-based file order.
+        return Math.max(0, (slide.index ?? 1) - 1);
       });
     },
   };

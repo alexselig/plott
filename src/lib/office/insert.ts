@@ -6,7 +6,7 @@
  */
 
 import type { OfficeBridge } from "@/lib/office/bridge";
-import { defaultInsertRect } from "@/lib/office/geometry";
+import { defaultInsertRect, type PointRect } from "@/lib/office/geometry";
 import { base64FromBytes } from "@/lib/office/host";
 import { chartToShapes, supportsShapes } from "@/lib/office/shapes";
 import { stampToTags, tagsToRef } from "@/lib/office/tags";
@@ -18,16 +18,19 @@ export interface InsertOptions {
   stamp: ExportStamp;
   /** Chart width / height, used to size the placement while keeping proportions. */
   aspect: number;
+  /** Explicit target footprint (points). When set, overrides the centered default
+   *  — e.g. to overlay exactly on top of a matched native chart. */
+  rect?: PointRect;
 }
 
 /** Insert a stamped chart image, centered and proportionally sized, on the slide. */
 export async function insertChart(
   bridge: OfficeBridge,
   pngBytes: Uint8Array,
-  { stamp, aspect }: InsertOptions,
+  { stamp, aspect, rect }: InsertOptions,
 ): Promise<void> {
   await bridge.insertImageBase64(base64FromBytes(pngBytes));
-  await bridge.styleSelected(defaultInsertRect(aspect), stampToTags(stamp));
+  await bridge.styleSelected(rect ?? defaultInsertRect(aspect), stampToTags(stamp));
 }
 
 /**

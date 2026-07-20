@@ -11,8 +11,10 @@ import { embedPngMetadata, stampEntries } from "@/lib/export/stamp";
 import { svgToPngBytes } from "@/lib/export/svg";
 import { commitVersion, createDocument, getVersion, stampFor } from "@/lib/id";
 import { powerPointBridge } from "@/lib/office/bridge";
+import type { PointRect } from "@/lib/office/geometry";
 import { isOfficeHost, loadOfficeJs, officeReady } from "@/lib/office/host";
 import { insertChart, insertChartShapes, readSelectedChart, replaceSelectedChart } from "@/lib/office/insert";
+import { matchSelectedChart } from "@/lib/office/native";
 import { supportsShapes } from "@/lib/office/shapes";
 import { getDocument, saveDocument } from "@/lib/store/db";
 import type { ChartDocument, ChartKind, ChartSpec, DataTable } from "@/lib/types";
@@ -43,6 +45,7 @@ export default function AddinPane() {
   const [tab, setTab] = useState<"data" | "style">("data");
   const [insertAs, setInsertAs] = useState<"image" | "shapes">("image");
   const [restyleDoc, setRestyleDoc] = useState<ChartDocument | null>(null);
+  const [nativeRect, setNativeRect] = useState<PointRect | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>("");
 
@@ -51,7 +54,7 @@ export default function AddinPane() {
   const transparent = !!spec.style.transparentBackground;
   const restyling = !!restyleDoc;
   const canShapes = supportsShapes(spec.kind);
-  const effectiveInsertAs = canShapes ? insertAs : "image";
+  const effectiveInsertAs = nativeRect ? "image" : canShapes ? insertAs : "image";
 
   // Load Office.js on demand, then detect whether we're inside PowerPoint.
   useEffect(() => {
@@ -82,8 +85,36 @@ export default function AddinPane() {
     setSpec(structuredClone(s.spec));
     setData(structuredClone(s.data));
     setRestyleDoc(null);
+    setNativeRect(null);
     setTab("data");
     setStatus("");
+  }
+
+  async function onMatchSelected() {
+    setBusy(true);
+    setStatus("");
+    try {
+      if (!isOfficeHost()) {
+        setStatus("Open in PowerPoint and select a slide that has a chart.");
+        return;
+      }
+      const match = await matchSelectedChart(powerPointBridge());
+      if (!match) {
+        setStatus("No native chart found on the current slide.");
+        return;
+      }
+      setRestyleDoc(null);
+      setKind(match.spec.kind);
+      setSpec(structuredClone(match.spec));
+      setData(structuredClone(match.data));
+      setNativeRect(match.rect);
+      setTab("style");
+      setStatus(`Pulled the chart from slide ${match.slideIndex + 1}, matched to its background. Style it, then Insert to overlay.`);
+    } catch (e) {
+      setStatus(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function rasterize(doc: ChartDocument): Promise<Uint8Array> {
@@ -113,8 +144,9 @@ export default function AddinPane() {
         // supportsShapes gates the UI, so this is belt-and-suspenders → fall back to image.
       }
       const bytes = await rasterize(doc);
-      await insertChart(powerPointBridge(), bytes, { stamp, aspect: ASPECT });
-      setStatus(`Inserted ${doc.id} on the slide.`);
+      await insertChart(powerPointBridge(), bytes, { stamp, aspect: ASPECT, rect: nativeRect ?? undefined });
+      setStatus(nativeRect ? `Placed ${doc.id} over the chart on the slide.` : `Inserted ${doc.id} on the slide.`);
+      setNativeRect(null);
     } catch (e) {
       setStatus(errMsg(e));
     } finally {
@@ -204,6 +236,15 @@ export default function AddinPane() {
           <span className="text-muted">
             Restyling <span className="font-semibold text-ink">{restyleDoc!.id}</span>
           </span>
+          <button type="button" onClick={resetToNew} className="text-[12px] font-medium text-accent hover:underline">
+            New chart
+          </button>
+        </div>
+      )}
+
+      {nativeRect && !restyling && (
+        <div className="flex items-center justify-between rounded-md border border-accent/40 bg-accent/5 px-3 py-2">
+          <span className="text-muted">Will overlay on the selected chart</span>
           <button type="button" onClick={resetToNew} className="text-[12px] font-medium text-accent hover:underline">
             New chart
           </button>
@@ -339,6 +380,14 @@ export default function AddinPane() {
           className="rounded-md border border-border bg-panel px-4 py-2.5 font-medium text-ink hover:border-accent disabled:opacity-50"
         >
           Restyle selected chart
+        </button>
+        <button
+          type="button"
+          onClick={onMatchSelected}
+          disabled={busy}
+          className="rounded-md border border-border bg-panel px-4 py-2.5 font-medium text-ink hover:border-accent disabled:opacity-50"
+        >
+          Match selected chart (pull data + background)
         </button>
         {status && <p className="text-[12px] text-muted">{status}</p>}
       </div>

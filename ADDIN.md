@@ -1,9 +1,22 @@
 # Plott — PowerPoint add-in
 
-A task-pane add-in that turns Plott into a side panel inside PowerPoint: **design a
-chart and insert it onto the current slide**, and **restyle a chart that's already on
-a slide**. It reuses the whole Plott chart engine (19 chart types, 13 treatments, 4
-palettes, direct-manipulation editing); only the slide interaction is new.
+A task-pane add-in that turns Plott into a side panel inside PowerPoint. It reuses
+the whole Plott chart engine (19 chart types, 13 treatments, 4 palettes,
+direct-manipulation editing); only the slide interaction is new.
+
+What it does:
+
+- **Insert a chart** onto the current slide — as a styled **image**, or as **native
+  editable shapes** (rectangles / lines / ellipses / text boxes, grouped) that the
+  user can move/recolor/retype. Shapes are available for bar / horizontal-bar /
+  grouped-bar / stacked-bar / line / multi-line / scatter / bubble; kinds needing
+  curves (pie, donut, area, radar) have no freeform-path API in PowerPoint and stay
+  image-only. Shapes render a flat palette version; the image keeps the full
+  treatment styling.
+- **Restyle a Plott chart** already on a slide — select it, tweak, update in place.
+- **Match a native chart** — select a native PowerPoint chart, pull its data (via
+  `getFileAsync` + Plott's PPTX parser), match the Plott chart's background to the
+  slide's background color, then drop a styled image on top of it.
 
 ## How the link survives copy/paste
 
@@ -22,7 +35,9 @@ Code map:
 | Shape-tag format + parsing | `src/lib/office/tags.ts` |
 | EMU↔points + placement math | `src/lib/office/geometry.ts` |
 | Host glue (Office.js / PowerPoint.run) | `src/lib/office/bridge.ts` |
-| Insert / read-selection / replace | `src/lib/office/insert.ts` |
+| Insert / read-selection / replace / insert-shapes | `src/lib/office/insert.ts` |
+| Chart → native shape primitives | `src/lib/office/shapes.ts` |
+| Match a native chart (data + slide bg) | `src/lib/office/native.ts` |
 | Task-pane UI | `src/components/AddinPane.tsx`, `src/app/addin/` |
 | Manifest generator | `scripts/make-manifest.mjs` |
 | E2E (mocked Office host) | `e2e/addin.mjs` |
