@@ -46,10 +46,16 @@ export function powerPointBridge(): OfficeBridge {
     readSelected() {
       return PowerPoint.run(async (context) => {
         const sel = context.presentation.getSelectedShapes();
-        sel.load("items/left,items/top,items/width,items/height,items/tags/key,items/tags/value");
+        sel.load("items");
         await context.sync();
         if (sel.items.length === 0) return null;
+        // Load the shape's geometry + its tags in a separate pass. Loading a nested
+        // collection (tags) through the parent collection in one path doesn't
+        // reliably populate shape.tags.items, so read the tags explicitly here.
         const shape = sel.items[0];
+        shape.load("left,top,width,height");
+        shape.tags.load("key,value");
+        await context.sync();
         const tags: Record<string, string> = {};
         shape.tags.items.forEach((t) => {
           tags[t.key] = t.value;
