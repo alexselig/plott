@@ -17,7 +17,7 @@ import { writeFileSync } from "node:fs";
 // Stable identity — do NOT regenerate; changing it makes Office treat it as a new add-in.
 const ADDIN_ID = "2876137d-d349-4ed1-9493-5b31797709ca";
 
-const host = (process.argv[2] || "https://localhost:3000").replace(/\/+$/, "");
+const host = (process.argv[2] || "https://localhost:3010").replace(/\/+$/, "");
 const out = process.argv[3] || "public/manifest.xml";
 
 const manifest = `<?xml version="1.0" encoding="UTF-8"?>

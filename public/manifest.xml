@@ -11,17 +11,17 @@
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Plott" />
   <Description DefaultValue="Design presentation-ready charts and insert them onto your slides — then reopen and restyle a chart that's already on a slide." />
-  <IconUrl DefaultValue="https://localhost:3000/addin/icon-32.png" />
-  <HighResolutionIconUrl DefaultValue="https://localhost:3000/addin/icon-80.png" />
-  <SupportUrl DefaultValue="https://localhost:3000/" />
+  <IconUrl DefaultValue="https://localhost:3010/addin/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://localhost:3010/addin/icon-80.png" />
+  <SupportUrl DefaultValue="https://localhost:3010/" />
   <AppDomains>
-    <AppDomain>https://localhost:3000</AppDomain>
+    <AppDomain>https://localhost:3010</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Presentation" />
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://localhost:3000/addin/" />
+    <SourceLocation DefaultValue="https://localhost:3010/addin/" />
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -62,12 +62,12 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16" DefaultValue="https://localhost:3000/addin/icon-16.png" />
-        <bt:Image id="Icon.32" DefaultValue="https://localhost:3000/addin/icon-32.png" />
-        <bt:Image id="Icon.80" DefaultValue="https://localhost:3000/addin/icon-80.png" />
+        <bt:Image id="Icon.16" DefaultValue="https://localhost:3010/addin/icon-16.png" />
+        <bt:Image id="Icon.32" DefaultValue="https://localhost:3010/addin/icon-32.png" />
+        <bt:Image id="Icon.80" DefaultValue="https://localhost:3010/addin/icon-80.png" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/addin/" />
+        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3010/addin/" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="Plott.GroupLabel" DefaultValue="Plott" />

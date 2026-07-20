@@ -33,13 +33,21 @@ shape geometry (**1.4**), `getSelectedShapes()` (**1.5**). Effective minimum: **
 
 ## Run it locally (fastest — Mac desktop)
 
-Office requires HTTPS even in dev. Next can serve a locally-trusted cert:
+Office requires HTTPS even in dev. Use trusted localhost certs from
+`office-addin-dev-certs` (installed once; shared with other Office add-ins) so there's
+no `mkcert` keychain-password prompt:
 
 ```bash
-npm run dev:https          # serves https://localhost:3000 (mkcert-backed)
+npm run addin:certs        # once per machine — creates + trusts a localhost CA
+npm run dev:addin          # serves https://localhost:3010 with those certs
 ```
 
-The default `public/manifest.xml` already points at `https://localhost:3000`.
+The default `public/manifest.xml` points at `https://localhost:3010`.
+
+> Why not `next dev --experimental-https` alone? On macOS its `mkcert -install` step
+> needs an admin/keychain password and fails non-interactively, falling back to HTTP
+> (which Office rejects). `dev:addin` passes the pre-trusted `office-addin-dev-certs`
+> key/cert explicitly, so it binds HTTPS with no prompt.
 
 **Sideload into PowerPoint on Mac (desktop):**
 
@@ -57,7 +65,7 @@ The default `public/manifest.xml` already points at `https://localhost:3000`.
 1. Open a deck at office.com / OneDrive.
 2. **Home → Add-ins → More Settings → Upload My Add-in** → choose `public/manifest.xml`.
    (For the web the app must be reachable at the manifest's host; use the GitHub Pages
-   build below, or a tunnel to `https://localhost:3000`.)
+   build below, or a tunnel to `https://localhost:3010`.)
 
 ## Host it (shareable — PowerPoint on the web)
 
@@ -80,5 +88,5 @@ Then upload `public/manifest.ghpages.xml` via **Upload My Add-in**.
 ```bash
 npx office-addin-manifest validate public/manifest.xml   # schema check
 npx vitest run src/lib/office                              # unit tests
-BASE_URL=http://localhost:3000 node e2e/addin.mjs          # end-to-end (mocked host)
+npm run dev & BASE_URL=http://localhost:3000 node e2e/addin.mjs   # end-to-end (mocked host)
 ```
