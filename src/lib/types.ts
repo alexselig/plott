@@ -76,6 +76,10 @@ export interface ChartStyle {
   showValueLabels: boolean;
   /** Draw the Plott ID badge onto exports. */
   showIdBadge: boolean;
+  /** Chart title font size in px (defaults to 20). */
+  titleSize?: number;
+  /** Chart title horizontal alignment (defaults to "left"). */
+  titleAlign?: "left" | "center" | "right";
   xAxisLabel?: string;
   yAxisLabel?: string;
   /** Imported value-axis scaling (from PowerPoint's `c:valAx`), so the rendered

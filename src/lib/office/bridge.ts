@@ -7,7 +7,7 @@
  */
 
 import type { PointRect } from "@/lib/office/geometry";
-import type { ShapeDraw } from "@/lib/office/shapes";
+import { lineToRect, type ShapeDraw } from "@/lib/office/shapes";
 
 /** What the host lets us do to the current slide / selection. */
 export interface OfficeBridge {
@@ -96,9 +96,15 @@ export function powerPointBridge(): OfficeBridge {
         for (const d of draws) {
           let shape: PowerPoint.Shape;
           if (d.kind === "line") {
-            shape = shapes.addLine(PowerPoint.ConnectorType.straight, { left: d.x1, top: d.y1, width: d.x2, height: d.y2 });
-            shape.lineFormat.color = d.color;
-            shape.lineFormat.weight = d.weight;
+            // addLine's width/height are box dimensions, not end coords — draw the
+            // line as a thin (optionally rotated) rectangle so it's never malformed.
+            const lr = lineToRect(d.x1, d.y1, d.x2, d.y2, d.weight);
+            shape = shapes.addGeometricShape(PowerPoint.GeometricShapeType.rectangle, { left: lr.left, top: lr.top, width: lr.width, height: lr.height });
+            shape.fill.setSolidColor(d.color);
+            shape.lineFormat.visible = false;
+            if (lr.rotation !== 0 && Office.context.requirements.isSetSupported("PowerPointApi", "1.10")) {
+              shape.rotation = lr.rotation;
+            }
           } else if (d.kind === "text") {
             shape = shapes.addTextBox(d.text, { left: d.left, top: d.top, width: d.width, height: d.height });
             const font = shape.textFrame.textRange.font;

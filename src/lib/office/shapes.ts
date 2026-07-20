@@ -34,6 +34,39 @@ export function supportsShapes(kind: ChartKind): boolean {
   return SHAPE_KINDS.has(kind);
 }
 
+/** A line rendered as a thin rectangle (points), rotated for diagonals. */
+export interface LineRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  /** Degrees clockwise; 0 for horizontal/vertical (no rotation API needed). */
+  rotation: number;
+}
+
+/**
+ * Represent a line from (x1,y1)→(x2,y2) as a thin rectangle. PowerPoint's
+ * `addLine` treats width/height as the bounding-box *dimensions* (not end-point
+ * coordinates), which makes arbitrary segments unreliable — a filled thin rect is
+ * unambiguous. Horizontal/vertical lines need no rotation (works at req set 1.4);
+ * diagonals return a center-anchored rect + rotation angle (req set 1.10).
+ */
+export function lineToRect(x1: number, y1: number, x2: number, y2: number, weight: number): LineRect {
+  const w = Math.max(weight, 0.5);
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (Math.abs(dy) < 0.5) {
+    return { left: Math.min(x1, x2), top: (y1 + y2) / 2 - w / 2, width: Math.max(Math.abs(dx), w), height: w, rotation: 0 };
+  }
+  if (Math.abs(dx) < 0.5) {
+    return { left: (x1 + x2) / 2 - w / 2, top: Math.min(y1, y2), width: w, height: Math.max(Math.abs(dy), w), rotation: 0 };
+  }
+  const length = Math.hypot(dx, dy);
+  const cx = (x1 + x2) / 2;
+  const cy = (y1 + y2) / 2;
+  return { left: cx - length / 2, top: cy - w / 2, width: length, height: w, rotation: (Math.atan2(dy, dx) * 180) / Math.PI };
+}
+
 export type ShapeDraw =
   | { kind: "rect"; left: number; top: number; width: number; height: number; fill: string; role: string }
   | { kind: "ellipse"; left: number; top: number; width: number; height: number; fill: string; role: string }
@@ -88,17 +121,20 @@ function plotBox(spec: ChartSpec, rect: PointRect, horizontal: boolean): { plot:
 
 function titleDraw(spec: ChartSpec, rect: PointRect, hasTitle: boolean): ShapeDraw[] {
   if (!hasTitle) return [];
+  // Title size is authored in the 760px export space; scale to the slide-point rect.
+  const size = Math.max(9, Math.min(24, Math.round((spec.style.titleSize ?? 20) * (rect.width / 760))));
+  const align = spec.style.titleAlign === "center" ? "Center" : spec.style.titleAlign === "right" ? "Right" : "Left";
   return [
     {
       kind: "text",
       left: rect.left + 4,
       top: rect.top + 4,
       width: rect.width - 8,
-      height: 24,
+      height: size + 8,
       text: spec.title!.trim(),
-      size: 16,
+      size,
       color: TITLE_COLOR,
-      align: "Left",
+      align,
       role: "title",
     },
   ];

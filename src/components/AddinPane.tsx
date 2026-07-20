@@ -259,6 +259,41 @@ export default function AddinPane() {
           placeholder="Chart title"
           className="plott-serif rounded-md border border-border bg-panel px-3 py-2 text-[17px] text-ink outline-none focus:border-accent"
         />
+        <div className="flex items-center gap-2 text-[12px]">
+          <span className="text-muted">Size</span>
+          <div className="inline-flex overflow-hidden rounded-md border border-border">
+            {([["S", 16], ["M", 20], ["L", 26], ["XL", 32]] as const).map(([lbl, px]) => {
+              const active = (spec.style.titleSize ?? 20) === px;
+              return (
+                <button
+                  key={lbl}
+                  type="button"
+                  onClick={() => setSpec((s) => ({ ...s, style: { ...s.style, titleSize: px } }))}
+                  className={`px-2.5 py-1 ${active ? "bg-accent text-white" : "bg-panel text-ink"}`}
+                >
+                  {lbl}
+                </button>
+              );
+            })}
+          </div>
+          <span className="ml-1 text-muted">Align</span>
+          <div className="inline-flex overflow-hidden rounded-md border border-border">
+            {(["left", "center", "right"] as const).map((a) => {
+              const active = (spec.style.titleAlign ?? "left") === a;
+              return (
+                <button
+                  key={a}
+                  type="button"
+                  aria-label={`Align title ${a}`}
+                  onClick={() => setSpec((s) => ({ ...s, style: { ...s.style, titleAlign: a } }))}
+                  className={`px-2.5 py-1 ${active ? "bg-accent text-white" : "bg-panel text-ink"}`}
+                >
+                  {a === "left" ? "L" : a === "center" ? "C" : "R"}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </label>
 
       <label className="flex flex-col gap-1">

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { sampleFor } from "@/lib/charts/sample";
 import type { PointRect } from "@/lib/office/geometry";
-import { chartToShapes, supportsShapes, type ShapeDraw } from "@/lib/office/shapes";
+import { chartToShapes, lineToRect, supportsShapes, type ShapeDraw } from "@/lib/office/shapes";
 import type { ChartKind } from "@/lib/types";
 
 const RECT: PointRect = { left: 100, top: 50, width: 600, height: 360 };
@@ -97,5 +97,40 @@ describe("chartToShapes — unsupported", () => {
     for (const k of ["pie", "donut", "area", "radar"] as ChartKind[]) {
       expect(chartToShapes(sampleFor(k).spec, sampleFor(k).data, RECT)).toEqual([]);
     }
+  });
+});
+
+describe("lineToRect (lines as thin rectangles)", () => {
+  it("renders a horizontal line as a thin, un-rotated rect of the right length", () => {
+    const r = lineToRect(10, 50, 110, 50, 1);
+    expect(r.rotation).toBe(0);
+    expect(r.left).toBe(10);
+    expect(r.width).toBe(100);
+    expect(r.height).toBe(1);
+    expect(r.top).toBeCloseTo(49.5, 5);
+  });
+
+  it("renders a vertical line as a thin, un-rotated rect", () => {
+    const r = lineToRect(20, 100, 20, 20, 2);
+    expect(r.rotation).toBe(0);
+    expect(r.width).toBe(2);
+    expect(r.height).toBe(80);
+    expect(r.top).toBe(20);
+    expect(r.left).toBeCloseTo(19, 5);
+  });
+
+  it("renders a diagonal line as a rotated rect centered on the segment", () => {
+    const r = lineToRect(0, 0, 30, 40, 2); // length 50, angle atan2(40,30) ≈ 53.13°
+    expect(r.width).toBeCloseTo(50, 5);
+    expect(r.height).toBe(2);
+    expect(r.rotation).toBeCloseTo(53.13, 1);
+    expect(r.left).toBeCloseTo(-10, 5); // cx 15 − length/2 25
+    expect(r.top).toBeCloseTo(19, 5); // cy 20 − w/2 1
+  });
+
+  it("handles an upward diagonal with a negative angle (no mirroring)", () => {
+    const r = lineToRect(0, 40, 30, 0, 2); // going up-right
+    expect(r.rotation).toBeCloseTo(-53.13, 1);
+    expect(r.width).toBeCloseTo(50, 5);
   });
 });

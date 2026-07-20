@@ -264,7 +264,8 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
   const compact = !!spec.style.hideAxisLabels;
   // Legends are omitted from compact thumbnails (they overlap at small sizes).
   const showLegend = spec.style.showLegend && series.length > 1 && !compact;
-  const titleBand = compact ? 0 : showTitle ? 34 : 10;
+  const titleSize = spec.style.titleSize ?? 20;
+  const titleBand = compact ? 0 : showTitle ? titleSize + 14 : 10;
   const legendY = titleBand + 4;
   const header = compact ? 8 : titleBand + (showLegend ? 18 : 0);
 
@@ -290,8 +291,11 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     </>
   );
 
+  const titleAlign = spec.style.titleAlign ?? "left";
+  const titleX = titleAlign === "center" ? width / 2 : titleAlign === "right" ? width - 16 : 16;
+  const titleAnchor = titleAlign === "center" ? "middle" : titleAlign === "right" ? "end" : "start";
   const title = showTitle ? (
-    <text x={16} y={24} fontSize={20} fill={titleColor} fontFamily={SERIF}>
+    <text x={titleX} y={titleSize + 4} textAnchor={titleAnchor} fontSize={titleSize} fill={titleColor} fontFamily={SERIF}>
       {spec.title}
     </text>
   ) : null;

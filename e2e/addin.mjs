@@ -105,8 +105,15 @@ await page.waitForTimeout(300);
 await page.getByRole("button", { name: "Editable shapes" }).click();
 await page.getByRole("button", { name: "Insert on slide" }).click();
 await page.waitForFunction(() => (window.__shapes?.length ?? 0) > 0 && !!window.__group?.PLOTT_ID, null, { timeout: 8000 });
-const shapeInfo = await page.evaluate(() => ({ n: window.__shapes.length, hasRect: window.__shapes.some((s) => s.type === "rect"), group: window.__group }));
+const shapeInfo = await page.evaluate(() => ({
+  n: window.__shapes.length,
+  hasRect: window.__shapes.some((s) => s.type === "rect"),
+  noLines: window.__shapes.every((s) => s.type !== "line"),
+  sane: window.__shapes.every((s) => { const o = s.opts || {}; return (o.width ?? 0) >= 0 && (o.height ?? 0) >= 0 && (o.width ?? 0) <= 960 && (o.height ?? 0) <= 540; }),
+  group: window.__group,
+}));
 check("editable shapes inserted (rectangles present)", shapeInfo.n > 0 && shapeInfo.hasRect, `n=${shapeInfo.n}`);
+check("lines render as sized rects, not malformed giant boxes", shapeInfo.noLines && shapeInfo.sane);
 check("shape group tagged with the chart id", /^PLT-/.test(shapeInfo.group?.PLOTT_ID || ""), shapeInfo.group?.PLOTT_ID);
 check("pie disables the Editable-shapes option", await (async () => {
   await page.selectOption("select", "pie");
