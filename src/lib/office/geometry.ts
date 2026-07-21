@@ -45,6 +45,23 @@ export function slideSizePoints(slide?: SlideSize | null): { width: number; heig
 }
 
 /**
+ * Pixel dimensions to render the export image at so it fills `rect` (a native
+ * chart's footprint) without distortion when placed there. Keeps `baseW` as the
+ * width and derives the height from the target's aspect; falls back to
+ * `fallbackH` when there's no overlay target. Clamped so a very tall/wide native
+ * chart still produces a sane raster.
+ */
+export function overlayExportSize(
+  rect: PointRect | null | undefined,
+  baseW: number,
+  fallbackH: number,
+): { width: number; height: number } {
+  if (!rect || rect.width <= 0 || rect.height <= 0) return { width: baseW, height: fallbackH };
+  const height = Math.round((baseW * rect.height) / rect.width);
+  return { width: baseW, height: Math.max(120, Math.min(baseW * 3, height)) };
+}
+
+/**
  * A centered default placement for a freshly inserted chart: it occupies `frac`
  * of the slide width, keeping the chart's `aspect` (= width / height). If that
  * would overflow `frac` of the slide height, it's clamped by height instead so the

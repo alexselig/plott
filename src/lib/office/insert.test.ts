@@ -171,4 +171,30 @@ describe("insertChartShapes", () => {
     expect(await insertChartShapes(bridge, spec, data, { stamp, aspect: 760 / 460 })).toBe(false);
     expect(bridge.shapeGroups).toHaveLength(0);
   });
+
+  it("sizes shapes to an explicit rect and prepends an opaque background to mask the native chart", async () => {
+    const bridge = new FakeBridge();
+    const { spec, data } = sampleFor("bar");
+    const rect = { left: 100, top: 50, width: 400, height: 220 };
+    const ok = await insertChartShapes(bridge, spec, data, { stamp, aspect: 760 / 460, rect });
+    expect(ok).toBe(true);
+    const draws = bridge.shapeGroups[0].draws;
+    // First shape is the full-rect background cover.
+    const bg = draws[0];
+    expect(bg.kind).toBe("rect");
+    expect(bg.role).toBe("background");
+    if (bg.kind === "rect") {
+      expect({ left: bg.left, top: bg.top, width: bg.width, height: bg.height }).toEqual(rect);
+    }
+    // Every shape stays within the target rect (i.e. it overlays that footprint).
+    for (const d of draws) {
+      if (d.kind === "line") {
+        expect(Math.min(d.x1, d.x2)).toBeGreaterThanOrEqual(rect.left - 0.5);
+        expect(Math.max(d.x1, d.x2)).toBeLessThanOrEqual(rect.left + rect.width + 0.5);
+      } else {
+        expect(d.left).toBeGreaterThanOrEqual(rect.left - 0.5);
+        expect(d.left + d.width).toBeLessThanOrEqual(rect.left + rect.width + 0.5);
+      }
+    }
+  });
 });

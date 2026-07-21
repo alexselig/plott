@@ -162,6 +162,18 @@ describe("compact mode + geometry options", () => {
     expect(compact.every((d) => d.role.startsWith("bar") || d.role.startsWith("point") || d.role.startsWith("line"))).toBe(true);
   });
 
+  it("prepends a full-rect card background only when background is requested", () => {
+    const base = sampleFor("bar");
+    expect(chartToShapes(base.spec, base.data, RECT).some((d) => d.role === "background")).toBe(false);
+    const withBg = chartToShapes(base.spec, base.data, RECT, false, true);
+    const bg = withBg[0];
+    expect(bg.role).toBe("background");
+    expect(bg.kind === "rect" && bg.left === RECT.left && bg.width === RECT.width && bg.height === RECT.height).toBe(true);
+    // A transparent chart never paints an opaque cover, even when asked.
+    const transparentSpec = { ...base.spec, style: { ...base.spec.style, transparentBackground: true } };
+    expect(chartToShapes(transparentSpec, base.data, RECT, false, true).some((d) => d.role === "background")).toBe(false);
+  });
+
   it("offers orientation-appropriate geometry options", () => {
     expect(geoOptions("bar")).toContain("cylinder");
     expect(geoOptions("bar")).toContain("roundTop");

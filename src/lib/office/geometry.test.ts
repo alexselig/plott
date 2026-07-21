@@ -4,6 +4,7 @@ import {
   DEFAULT_SLIDE_POINTS,
   defaultInsertRect,
   emuRectToPoints,
+  overlayExportSize,
   pointsFromEmu,
   slideSizePoints,
 } from "@/lib/office/geometry";
@@ -67,5 +68,26 @@ describe("defaultInsertRect", () => {
     expect(r.width / r.height).toBeCloseTo(16 / 9, 3);
     const r2 = defaultInsertRect(Number.NaN, DEFAULT_SLIDE_POINTS);
     expect(r2.width / r2.height).toBeCloseTo(16 / 9, 3);
+  });
+});
+
+describe("overlayExportSize", () => {
+  it("returns the fallback size when there's no overlay target", () => {
+    expect(overlayExportSize(null, 760, 460)).toEqual({ width: 760, height: 460 });
+    expect(overlayExportSize({ left: 0, top: 0, width: 0, height: 100 }, 760, 460)).toEqual({ width: 760, height: 460 });
+  });
+
+  it("matches the target's aspect so the image covers it undistorted", () => {
+    // A 400x300 (4:3) native chart -> height = 760 * 300/400 = 570.
+    expect(overlayExportSize({ left: 10, top: 10, width: 400, height: 300 }, 760, 460)).toEqual({ width: 760, height: 570 });
+    // A wide 800x200 chart -> 760 * 200/800 = 190 (still >= floor).
+    expect(overlayExportSize({ left: 0, top: 0, width: 800, height: 200 }, 760, 460)).toEqual({ width: 760, height: 190 });
+  });
+
+  it("clamps extreme aspects to a sane raster height", () => {
+    const tall = overlayExportSize({ left: 0, top: 0, width: 100, height: 900 }, 760, 460);
+    expect(tall.height).toBe(760 * 3); // clamped to 3x width
+    const short = overlayExportSize({ left: 0, top: 0, width: 4000, height: 100 }, 760, 460);
+    expect(short.height).toBe(120); // clamped to the floor
   });
 });

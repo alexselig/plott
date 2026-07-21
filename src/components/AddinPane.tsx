@@ -13,7 +13,7 @@ import { embedPngMetadata, stampEntries } from "@/lib/export/stamp";
 import { svgToPngBytes } from "@/lib/export/svg";
 import { commitVersion, createDocument, getVersion, stampFor } from "@/lib/id";
 import { powerPointBridge } from "@/lib/office/bridge";
-import type { PointRect } from "@/lib/office/geometry";
+import { overlayExportSize, type PointRect } from "@/lib/office/geometry";
 import { isOfficeHost, loadOfficeJs, officeReady, onSelectionChanged } from "@/lib/office/host";
 import {
   classifySelection,
@@ -31,7 +31,6 @@ import type { ChartDocument, ChartKind, ChartSpec, DataTable } from "@/lib/types
 const EXPORT_W = 760;
 const EXPORT_H = 460;
 const PREVIEW_W = 300;
-const PREVIEW_H = Math.round((PREVIEW_W * EXPORT_H) / EXPORT_W);
 const ASPECT = EXPORT_W / EXPORT_H;
 
 type Host = "checking" | "office" | "browser";
@@ -83,11 +82,15 @@ export default function AddinPane() {
   const transparent = !!spec.style.transparentBackground;
   const restyling = !!restyleDoc;
   const canShapes = supportsShapes(spec.kind);
-  const effectiveInsertAs = nativeRect ? "image" : canShapes ? insertAs : "image";
+  const effectiveInsertAs = canShapes ? insertAs : "image";
   const shapeGeos = geoOptions(spec.kind);
   const activeGeo = effectiveGeo(spec);
   const isMarkerKind =
     spec.kind === "scatter" || spec.kind === "bubble" || spec.kind === "line" || spec.kind === "lineMulti";
+  // When overlaying a matched native chart, render the export (and preview) at the
+  // native chart's aspect so the inserted image/shapes cover it exactly, undistorted.
+  const exportSize = overlayExportSize(nativeRect, EXPORT_W, EXPORT_H);
+  const previewH = Math.round((PREVIEW_W * exportSize.height) / exportSize.width);
 
   // Load Office.js on demand, then detect whether we're inside PowerPoint.
   useEffect(() => {
@@ -210,9 +213,10 @@ export default function AddinPane() {
       }
       const stamp = stampFor(doc);
       if (effectiveInsertAs === "shapes") {
-        const ok = await insertChartShapes(powerPointBridge(), spec, data, { stamp, aspect: ASPECT });
+        const ok = await insertChartShapes(powerPointBridge(), spec, data, { stamp, aspect: ASPECT, rect: nativeRect ?? undefined });
         if (ok) {
-          setStatus(`Inserted ${doc.id} as editable shapes.`);
+          setStatus(nativeRect ? `Placed ${doc.id} as editable shapes over the chart.` : `Inserted ${doc.id} as editable shapes.`);
+          setNativeRect(null);
           return;
         }
         // supportsShapes gates the UI, so this is belt-and-suspenders → fall back to image.
@@ -312,12 +316,12 @@ export default function AddinPane() {
 
         <div
           className={`mx-auto w-full overflow-hidden rounded-lg border border-border ${transparent && effectiveInsertAs !== "shapes" ? "cf-checkerboard" : ""}`}
-          style={{ aspectRatio: `${EXPORT_W} / ${EXPORT_H}`, maxHeight: 196 }}
+          style={{ aspectRatio: `${exportSize.width} / ${exportSize.height}`, maxHeight: 196 }}
         >
           {effectiveInsertAs === "shapes" ? (
-            <ShapesPreview spec={spec} data={data} width={EXPORT_W} height={EXPORT_H} />
+            <ShapesPreview spec={spec} data={data} width={exportSize.width} height={exportSize.height} background />
           ) : (
-            <ChartSVG spec={spec} data={data} width={PREVIEW_W} height={PREVIEW_H} transparent={transparent} showTitle fluid />
+            <ChartSVG spec={spec} data={data} width={PREVIEW_W} height={previewH} transparent={transparent} showTitle fluid />
           )}
         </div>
 
@@ -508,13 +512,13 @@ export default function AddinPane() {
       </div>
 
       {/* Offscreen, export-fidelity render used to rasterize the PNG placed on the slide. */}
-      <div aria-hidden style={{ position: "absolute", left: -99999, top: 0, width: EXPORT_W, height: EXPORT_H }}>
+      <div aria-hidden style={{ position: "absolute", left: -99999, top: 0, width: exportSize.width, height: exportSize.height }}>
         <ChartSVG
           ref={exportRef}
           spec={spec}
           data={data}
-          width={EXPORT_W}
-          height={EXPORT_H}
+          width={exportSize.width}
+          height={exportSize.height}
           idBadge={restyling ? restyleDoc!.id : undefined}
           transparent={transparent}
           showTitle

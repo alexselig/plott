@@ -34,18 +34,21 @@ export async function insertChart(
 }
 
 /**
- * Insert the chart as native, editable PowerPoint shapes (grouped + tagged), sized
- * to the same footprint as the image insert. Returns false for chart kinds that
- * can't be expressed without freeform paths (caller should fall back to image).
+ * Insert the chart as native, editable PowerPoint shapes (grouped + tagged). Sized
+ * to `rect` when given (e.g. to overlay exactly on top of a matched native chart),
+ * otherwise to a centered default. Returns false for chart kinds that can't be
+ * expressed without freeform paths (caller should fall back to image).
  */
 export async function insertChartShapes(
   bridge: OfficeBridge,
   spec: ChartSpec,
   data: DataTable,
-  { stamp, aspect }: InsertOptions,
+  { stamp, aspect, rect }: InsertOptions,
 ): Promise<boolean> {
   if (!supportsShapes(spec.kind)) return false;
-  const draws = chartToShapes(spec, data, defaultInsertRect(aspect));
+  // Include an opaque background when covering a native chart (or any non-transparent
+  // insert) so the shapes fully mask what's underneath, like the image export does.
+  const draws = chartToShapes(spec, data, rect ?? defaultInsertRect(aspect), false, true);
   if (draws.length === 0) return false;
   await bridge.insertShapes(draws, stampToTags(stamp));
   return true;

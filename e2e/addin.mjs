@@ -218,6 +218,39 @@ check(
   `select=${await page.locator("select").inputValue()}`,
 );
 
+// ---- 5) inserting over the native chart covers its exact footprint ----
+// The fixture's chart graphicFrame is at EMU {x:838200,y:1524000,cx:6858000,cy:3429000}
+// -> points {left:66, top:120, width:540, height:270}.
+const NATIVE = { left: 66, top: 120, width: 540, height: 270 };
+// (a) Image overlay: the inserted picture is sized+positioned to the native rect.
+await page.evaluate(() => (window.__model.shapes = []));
+await page.getByRole("button", { name: "Insert on slide" }).click();
+await page.waitForFunction(() => window.__snapshot().length > 0, null, { timeout: 8000 });
+const imgSnap = (await page.evaluate(() => window.__snapshot()))[0];
+check(
+  "image overlay exactly covers the native chart footprint",
+  Math.abs(imgSnap.left - NATIVE.left) < 1 && Math.abs(imgSnap.top - NATIVE.top) < 1 && Math.abs(imgSnap.width - NATIVE.width) < 1 && Math.abs(imgSnap.height - NATIVE.height) < 1,
+  `${imgSnap.left},${imgSnap.top},${imgSnap.width}x${imgSnap.height}`,
+);
+
+// (b) Re-match, then insert as editable shapes; shapes cover the footprint + carry a background.
+await page.evaluate(() => window.__selectNative());
+await styleExcelBtn.waitFor({ state: "visible", timeout: 8000 });
+await styleExcelBtn.click();
+await page.waitForFunction(() => /rows\)/.test(document.querySelector("p[data-status]")?.textContent || ""), null, { timeout: 8000 });
+await page.getByRole("button", { name: "style", exact: true }).click();
+await page.getByRole("button", { name: "Editable shapes" }).click();
+await page.evaluate(() => (window.__shapes = []));
+await page.getByRole("button", { name: "Insert on slide" }).click();
+await page.waitForFunction(() => (window.__shapes?.length ?? 0) > 0, null, { timeout: 8000 });
+const shapeCover = await page.evaluate((n) => {
+  const inRect = (o) => o && o.left >= n.left - 1 && o.top >= n.top - 1 && o.left + o.width <= n.left + n.width + 1 && o.top + o.height <= n.top + n.height + 1;
+  const bg = window.__shapes.find((s) => s.opts && Math.abs(s.opts.left - n.left) < 1 && Math.abs(s.opts.width - n.width) < 1 && Math.abs(s.opts.height - n.height) < 1);
+  return { hasBackground: !!bg, allInside: window.__shapes.every((s) => inRect(s.opts)) };
+}, NATIVE);
+check("shapes overlay includes a full-footprint background cover", shapeCover.hasBackground);
+check("all overlay shapes sit within the native chart footprint", shapeCover.allInside);
+
 check("no page errors", errors.length === 0, errors[0] ?? "");
 const passed = results.filter(Boolean).length;
 console.log(`\n${passed}/${results.length} checks passed`);

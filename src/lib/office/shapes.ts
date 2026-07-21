@@ -14,7 +14,7 @@ import { categories, seriesList } from "@/lib/charts/access";
 import { effectiveColor } from "@/lib/charts/colors";
 import { numericValues } from "@/lib/charts/access";
 import { valueDomain, axisTicks } from "@/lib/charts/scale";
-import { treatmentOf } from "@/lib/charts/styles";
+import { cardBg, treatmentOf } from "@/lib/charts/styles";
 import type { PointRect } from "@/lib/office/geometry";
 import type { ChartKind, ChartSpec, DataTable, GeoShape } from "@/lib/types";
 
@@ -202,21 +202,27 @@ function titleDraw(spec: ChartSpec, rect: PointRect, hasTitle: boolean): ShapeDr
  * Native-shape draw list for `spec`/`data` placed within `rect` (points on the
  * slide). Returns [] for unsupported kinds (callers should gate on `supportsShapes`).
  * `compact` drops the title/axes/gridlines/labels for small style swatches.
+ * `background` prepends an opaque card-colored rectangle filling `rect` — needed
+ * when the shapes overlay (mask) a native chart, so it doesn't show through the
+ * gaps between bars/lines; matches the image export's background.
  */
-export function chartToShapes(spec: ChartSpec, data: DataTable, rect: PointRect, compact = false): ShapeDraw[] {
+export function chartToShapes(spec: ChartSpec, data: DataTable, rect: PointRect, compact = false, background = false): ShapeDraw[] {
+  const base = background && !spec.style.transparentBackground
+    ? [{ kind: "rect" as const, left: rect.left, top: rect.top, width: rect.width, height: rect.height, fill: cardBg(spec.style), role: "background" }]
+    : [];
   switch (spec.kind) {
     case "bar":
     case "barGrouped":
     case "barStacked":
-      return verticalBars(spec, data, rect, spec.kind === "barStacked", compact);
+      return [...base, ...verticalBars(spec, data, rect, spec.kind === "barStacked", compact)];
     case "barHorizontal":
-      return horizontalBars(spec, data, rect, compact);
+      return [...base, ...horizontalBars(spec, data, rect, compact)];
     case "line":
     case "lineMulti":
-      return lines(spec, data, rect, compact);
+      return [...base, ...lines(spec, data, rect, compact)];
     case "scatter":
     case "bubble":
-      return scatter(spec, data, rect, compact);
+      return [...base, ...scatter(spec, data, rect, compact)];
     default:
       return [];
   }

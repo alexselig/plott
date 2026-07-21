@@ -99,6 +99,7 @@ export default function ShapesPreview({
   width = 320,
   height = 200,
   compact = false,
+  background = false,
   bg = "#ffffff",
 }: {
   spec: ChartSpec;
@@ -106,9 +107,11 @@ export default function ShapesPreview({
   width?: number;
   height?: number;
   compact?: boolean;
+  /** Emit the opaque card background rectangle (mirrors the on-slide insert). */
+  background?: boolean;
   bg?: string;
 }) {
-  const draws = chartToShapes(spec, data, { left: 0, top: 0, width, height }, compact);
+  const draws = chartToShapes(spec, data, { left: 0, top: 0, width, height }, compact, background);
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
