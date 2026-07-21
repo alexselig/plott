@@ -109,6 +109,12 @@ export default function Gallery() {
               {count} chart{count === 1 ? "" : "s"} · built for PowerPoint
             </span>
             <Link
+              href="/install"
+              className="rounded-md border border-border px-4 py-2.5 text-[13px] font-medium text-ink hover:border-accent hover:text-accent"
+            >
+              Install add-in
+            </Link>
+            <Link
               href="/start"
               className="rounded-md bg-accent px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-accent-hover"
             >

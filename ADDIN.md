@@ -49,6 +49,24 @@ Requirement sets used: image insert (Common JS), shape tags (PowerPointApi **1.3
 shape geometry (**1.4**), `getSelectedShapes()` (**1.5**). Effective minimum: **1.5**
 (GA on PowerPoint web, Windows M365 2208+, and Mac 16.64+).
 
+## Install it (hosted, for users)
+
+The add-in is published to GitHub Pages and the install page walks users through
+side-loading it on the web, Windows, and Mac:
+
+- **Install page:** https://alexselig.github.io/plott/install/
+- **Manifest:** https://alexselig.github.io/plott/manifest.xml
+
+Deploy (or redeploy after a change) with:
+
+```bash
+scripts/deploy-ghpages.sh   # builds the static export -> pushes the gh-pages branch
+```
+
+It builds the static export under basePath `/plott`, regenerates the manifest to
+point at the Pages origin, and force-pushes `./out` to `gh-pages` (served by
+GitHub Pages). The in-app link lives on the home masthead ("Install add-in").
+
 ## Run it locally (fastest — Mac desktop)
 
 Office requires HTTPS even in dev. Use trusted localhost certs from
