@@ -7,7 +7,7 @@
  */
 
 import type { PointRect } from "@/lib/office/geometry";
-import { sliceToBytes } from "@/lib/office/host";
+import { assembleDocumentSlices, hexPreview, looksLikeZip } from "@/lib/office/host";
 import { lineToRect, type ShapeDraw } from "@/lib/office/shapes";
 import type { GeoShape } from "@/lib/types";
 
@@ -182,24 +182,30 @@ export function powerPointBridge(): OfficeBridge {
           }
           const file = fileRes.value;
           const count = file.sliceCount;
-          const slices: Uint8Array[] = [];
+          // Keep the raw slice payloads (not pre-normalized): PowerPoint on Mac
+          // returns base64 strings that must be reassembled as a group, not per
+          // slice, to avoid corrupting the zip. `assembleDocumentSlices` picks the
+          // right strategy and validates the result.
+          const raw: unknown[] = [];
           // Fetch slices sequentially. Concurrent getSliceAsync calls are unreliable
           // in some hosts (notably PowerPoint on Mac) and can silently drop slices.
           const fetchNext = (i: number) => {
             if (i >= count) {
               file.closeAsync(() => {});
-              const total = slices.reduce((n, s) => n + s.length, 0);
-              if (total === 0) {
-                reject(new Error("PowerPoint returned an empty document — try saving the deck, then retry."));
-                return;
+              try {
+                const out = assembleDocumentSlices(raw);
+                if (out.length === 0) {
+                  reject(new Error("PowerPoint returned an empty document — try saving the deck, then retry."));
+                  return;
+                }
+                // Log what the host handed back so real-PowerPoint reads are diagnosable.
+                console.info(
+                  `[Plott] getFileAsync: ${count} slice(s), data kind=${typeof raw[0]}, assembled ${out.length} bytes, header=${hexPreview(out)}, zip=${looksLikeZip(out)}`,
+                );
+                resolve(out);
+              } catch (err) {
+                reject(err instanceof Error ? err : new Error(String(err)));
               }
-              const out = new Uint8Array(total);
-              let off = 0;
-              for (const s of slices) {
-                out.set(s, off);
-                off += s.length;
-              }
-              resolve(out);
               return;
             }
             file.getSliceAsync(i, (sliceRes) => {
@@ -208,15 +214,7 @@ export function powerPointBridge(): OfficeBridge {
                 reject(new Error(sliceRes.error?.message ?? "Couldn't read a slice of the presentation."));
                 return;
               }
-              try {
-                // `.data` may be a Uint8Array, ArrayBuffer, number[], or (on Mac) a
-                // base64 string — normalize each shape so the zip isn't corrupted.
-                slices.push(sliceToBytes(sliceRes.value.data));
-              } catch (err) {
-                file.closeAsync(() => {});
-                reject(err instanceof Error ? err : new Error(String(err)));
-                return;
-              }
+              raw.push(sliceRes.value.data);
               fetchNext(i + 1);
             });
           };

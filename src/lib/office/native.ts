@@ -9,6 +9,7 @@
 
 import type { OfficeBridge } from "@/lib/office/bridge";
 import { emuRectToPoints, type PointRect } from "@/lib/office/geometry";
+import { hexPreview, looksLikeZip } from "@/lib/office/host";
 import { readPptx } from "@/lib/pptx";
 import { readSlidePreview } from "@/lib/pptx/slidePreview";
 import type { ExtractedChart } from "@/lib/pptx/types";
@@ -75,8 +76,16 @@ export async function matchSelectedChart(
     read = readPptx(bytes);
   } catch (e) {
     const kb = Math.round(bytes.length / 1024);
+    const header = hexPreview(bytes, 8);
+    // A valid .pptx starts with "50 4b 03 04" (PK..). "55 45 73 44" (UEsD) means the
+    // bytes are still base64 text; anything else means transport corruption.
+    const hint = looksLikeZip(bytes)
+      ? "The file looks like a valid zip but couldn't be parsed."
+      : header.startsWith("55 45 73 44")
+        ? "The document came back base64-encoded and wasn't decoded."
+        : "The document bytes look corrupted in transit.";
     throw new Error(
-      `Couldn't read the presentation PowerPoint returned (${kb} KB): ${e instanceof Error ? e.message : String(e)}. Try saving the deck (⌘S), then retry.`,
+      `Couldn't read the presentation PowerPoint returned (${kb} KB, header ${header}). ${hint} (${e instanceof Error ? e.message : String(e)}). Try saving the deck (⌘S), then retry.`,
     );
   }
 

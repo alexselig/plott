@@ -45,7 +45,14 @@ const OFFICE_MOCK = `
       requirements: { isSetSupported: () => true },
       document: {
         setSelectedDataAsync(data, opts, cb){ const s = makeShape(); s._base64 = data; model.shapes.push(s); model.selected = s; cb({ status: 'succeeded' }); },
-        getFileAsync(type, opts, cb){ const file = { sliceCount: 1, getSliceAsync(i, scb){ scb({ status: 'succeeded', value: { index: 0, data: DECK_B64 } }); }, closeAsync(ccb){ if (ccb) ccb({ status: 'succeeded' }); } }; cb({ status: 'succeeded', value: file }); },
+        getFileAsync(type, opts, cb){
+          // Split the base64 across 3 text slices to exercise multi-slice reassembly
+          // (the PowerPoint-on-Mac whole-file-base64-split path).
+          const n = 3, size = Math.ceil(DECK_B64.length / n);
+          const parts = [DECK_B64.slice(0, size), DECK_B64.slice(size, 2*size), DECK_B64.slice(2*size)];
+          const file = { sliceCount: parts.length, getSliceAsync(i, scb){ scb({ status: 'succeeded', value: { index: i, data: parts[i] } }); }, closeAsync(ccb){ if (ccb) ccb({ status: 'succeeded' }); } };
+          cb({ status: 'succeeded', value: file });
+        },
         addHandlerAsync(eventType, handler, cb){ selHandlers.push(handler); if (cb) cb({ status: 'succeeded' }); },
         removeHandlerAsync(eventType, opts, cb){ const i = selHandlers.indexOf(opts && opts.handler); if (i >= 0) selHandlers.splice(i, 1); if (cb) cb({ status: 'succeeded' }); },
       },

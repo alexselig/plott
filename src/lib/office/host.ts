@@ -45,9 +45,10 @@ export function base64FromBytes(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** Decode a base64 string to raw bytes. */
+/** Decode a base64 string to raw bytes. Tolerates internal whitespace/newlines
+ *  (some hosts wrap base64 at a fixed column). */
 export function bytesFromBase64(b64: string): Uint8Array {
-  const binary = atob(b64.trim());
+  const binary = atob(b64.replace(/\s+/g, ""));
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
   return out;
@@ -67,6 +68,96 @@ export function sliceToBytes(data: unknown): Uint8Array {
   if (typeof data === "string") return bytesFromBase64(data);
   if (Array.isArray(data)) return Uint8Array.from(data as number[]);
   throw new Error("Unrecognized document slice format from PowerPoint.");
+}
+
+/** A zip (and thus every .pptx/.xlsx) begins with the local-file-header magic
+ *  bytes "PK\x03\x04". Used to validate a reassembled document. */
+export function looksLikeZip(bytes: Uint8Array): boolean {
+  return bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
+}
+
+/** Hex dump of the first `n` bytes (for diagnosing a bad document read). */
+export function hexPreview(bytes: Uint8Array, n = 8): string {
+  return Array.from(bytes.subarray(0, n))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join(" ");
+}
+
+function concatBytes(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((sum, c) => sum + c.length, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  return out;
+}
+
+/** When `bytes` are actually ASCII base64 text (some hosts deliver the compressed
+ *  file base64-encoded as a byte array), decode them; null if they aren't base64. */
+function decodeBase64Bytes(bytes: Uint8Array): Uint8Array | null {
+  const n = Math.min(bytes.length, 64);
+  if (n === 0) return null;
+  for (let i = 0; i < n; i++) {
+    const c = bytes[i];
+    const isB64 =
+      (c >= 0x41 && c <= 0x5a) || // A-Z
+      (c >= 0x61 && c <= 0x7a) || // a-z
+      (c >= 0x30 && c <= 0x39) || // 0-9
+      c === 0x2b || c === 0x2f || c === 0x3d || // + / =
+      c === 0x0a || c === 0x0d || c === 0x09 || c === 0x20; // whitespace
+    if (!isB64) return null;
+  }
+  try {
+    let s = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) s += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    return bytesFromBase64(s);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reassemble the raw payloads from `File.getSliceAsync` into the document bytes.
+ * Slice `.data` varies by host and none of the shapes are guaranteed:
+ *   - byte arrays of the raw zip (Windows/web, the documented shape),
+ *   - base64 strings — the whole file split across slices, OR encoded per slice
+ *     (PowerPoint on Mac),
+ *   - byte arrays whose *content* is base64 text.
+ * We assemble, then validate against the zip signature ("PK\x03\x04"), trying each
+ * plausible interpretation so the correct one wins regardless of host. Falls back
+ * to a best effort (surfaced with a clear error upstream) when none validates.
+ */
+export function assembleDocumentSlices(raw: unknown[]): Uint8Array {
+  if (raw.length === 0) return new Uint8Array(0);
+
+  if (raw.every((d) => typeof d === "string")) {
+    const strings = raw as string[];
+    // (a) whole file base64, split into text chunks -> join, then decode once.
+    try {
+      const joined = bytesFromBase64(strings.join(""));
+      if (looksLikeZip(joined)) return joined;
+    } catch {
+      /* try the next strategy */
+    }
+    // (b) each slice base64-encoded separately -> decode each, then concatenate.
+    try {
+      const perSlice = concatBytes(strings.map((s) => bytesFromBase64(s)));
+      if (looksLikeZip(perSlice)) return perSlice;
+    } catch {
+      /* fall through to best effort */
+    }
+    return bytesFromBase64(strings.join("")); // best effort; upstream validates
+  }
+
+  const joined = concatBytes(raw.map((d) => sliceToBytes(d)));
+  if (looksLikeZip(joined)) return joined;
+  // Some hosts deliver the file base64-encoded inside a byte array — decode it.
+  const decoded = decodeBase64Bytes(joined);
+  if (decoded && looksLikeZip(decoded)) return decoded;
+  return joined; // best effort; upstream validates + reports the header bytes
 }
 
 /**
