@@ -8,6 +8,7 @@
 
 import type { PointRect } from "@/lib/office/geometry";
 import { lineToRect, type ShapeDraw } from "@/lib/office/shapes";
+import type { GeoShape } from "@/lib/types";
 
 /** What the host lets us do to the current slide / selection. */
 export interface OfficeBridge {
@@ -25,6 +26,31 @@ export interface OfficeBridge {
   getDocumentPptxBytes(): Promise<Uint8Array>;
   /** 0-based index of the currently active slide. */
   getSelectedSlideIndex(): Promise<number>;
+}
+
+/** Map a Plott `GeoShape` to a PowerPoint preset geometry. */
+function geoToPptx(geo: GeoShape): PowerPoint.GeometricShapeType {
+  const G = PowerPoint.GeometricShapeType;
+  switch (geo) {
+    case "roundRectangle":
+      return G.roundRectangle;
+    case "roundTop":
+      return G.round2SameRectangle; // both top corners rounded
+    case "snipTop":
+      return G.snip2SameRectangle; // both top corners cut
+    case "cylinder":
+      return G.can;
+    case "bevel":
+      return G.bevel;
+    case "ellipse":
+      return G.ellipse;
+    case "diamond":
+      return G.diamond;
+    case "triangle":
+      return G.triangle;
+    default:
+      return G.rectangle;
+  }
 }
 
 /** Real bridge backed by Office.js / PowerPoint.run. */
@@ -121,13 +147,8 @@ export function powerPointBridge(): OfficeBridge {
             shape.fill.clear();
             shape.lineFormat.visible = false;
           } else {
-            const rounded = d.kind === "rect" && d.rounded;
-            const geo = d.kind === "ellipse"
-              ? PowerPoint.GeometricShapeType.ellipse
-              : rounded
-                ? PowerPoint.GeometricShapeType.roundRectangle
-                : PowerPoint.GeometricShapeType.rectangle;
-            shape = shapes.addGeometricShape(geo, { left: d.left, top: d.top, width: d.width, height: d.height });
+            const geoKey: GeoShape = d.kind === "ellipse" ? "ellipse" : d.geo ?? "rectangle";
+            shape = shapes.addGeometricShape(geoToPptx(geoKey), { left: d.left, top: d.top, width: d.width, height: d.height });
             shape.fill.setSolidColor(d.fill);
             if (d.line) {
               shape.lineFormat.color = d.line.color;

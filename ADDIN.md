@@ -7,12 +7,15 @@ direct-manipulation editing); only the slide interaction is new.
 What it does:
 
 - **Insert a chart** onto the current slide — as a styled **image**, or as **native
-  editable shapes** (rectangles / lines / ellipses / text boxes, grouped) that the
-  user can move/recolor/retype. Shapes are available for bar / horizontal-bar /
-  grouped-bar / stacked-bar / line / multi-line / scatter / bubble; kinds needing
-  curves (pie, donut, area, radar) have no freeform-path API in PowerPoint and stay
-  image-only. Shapes render a flat palette version; the image keeps the full
-  treatment styling.
+  editable shapes** (grouped geometry + text boxes) that the user can move/recolor/retype.
+  Bars can be inserted with a chosen **geometry** — flat, rounded, rounded-top
+  (`Round2SameRectangle`), snipped (`Snip2SameRectangle`), cylinder (`Can`) or bevel —
+  and scatter/line markers as dots, diamonds or triangles, all real `GeometricShapeType`
+  presets. Shapes are available for bar / horizontal-bar / grouped-bar / stacked-bar /
+  line / multi-line / scatter / bubble; kinds needing curves (pie, donut, area, radar)
+  have no freeform-path API in PowerPoint and stay image-only. The shapes preview and the
+  shape-mode style swatches render the exact `chartToShapes` output (so what you see is
+  what gets inserted); the image path keeps the full treatment styling (gradients/shadows).
 - **Restyle a Plott chart** already on a slide — select it, tweak, update in place.
 - **Match a native chart** — select a native PowerPoint chart, pull its data (via
   `getFileAsync` + Plott's PPTX parser), match the Plott chart's background to the

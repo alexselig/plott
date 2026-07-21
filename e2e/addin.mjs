@@ -35,7 +35,7 @@ const OFFICE_MOCK = `
     CoercionType: { Image: 'image' },
     AsyncResultStatus: { Succeeded: 'succeeded' },
     EventType: { DocumentSelectionChanged: 'documentSelectionChanged' },
-    GeometricShapeType: { rectangle: 'Rectangle', ellipse: 'Ellipse' },
+    GeometricShapeType: { rectangle: 'Rectangle', roundRectangle: 'RoundRectangle', round2SameRectangle: 'Round2SameRectangle', snip2SameRectangle: 'Snip2SameRectangle', can: 'Can', bevel: 'Bevel', ellipse: 'Ellipse', diamond: 'Diamond', triangle: 'Triangle' },
     ConnectorType: { straight: 'Straight' },
     context: {
       host: 'PowerPoint',
@@ -68,7 +68,7 @@ const OFFICE_MOCK = `
     addGroup(arr){ const g = {}; window.__group = {}; return { tags: { add(k, v){ window.__group[k] = v; } } }; },
   };
   window.PowerPoint = {
-    GeometricShapeType: { rectangle: 'Rectangle', ellipse: 'Ellipse' },
+    GeometricShapeType: { rectangle: 'Rectangle', roundRectangle: 'RoundRectangle', round2SameRectangle: 'Round2SameRectangle', snip2SameRectangle: 'Snip2SameRectangle', can: 'Can', bevel: 'Bevel', ellipse: 'Ellipse', diamond: 'Diamond', triangle: 'Triangle' },
     ConnectorType: { straight: 'Straight' },
     run: async (cb) => cb({
       presentation: {
@@ -126,6 +126,18 @@ const shapeInfo = await page.evaluate(() => ({
 check("editable shapes inserted (rectangles present)", shapeInfo.n > 0 && shapeInfo.hasRect, `n=${shapeInfo.n}`);
 check("lines render as sized rects, not malformed giant boxes", shapeInfo.noLines && shapeInfo.sane);
 check("shape group tagged with the chart id", /^PLT-/.test(shapeInfo.group?.PLOTT_ID || ""), shapeInfo.group?.PLOTT_ID);
+
+// ---- geometry picker drives the inserted native geometry ----
+await page.evaluate(() => { window.__shapes = []; });
+await page.getByRole("button", { name: "Shape Cylinder" }).click();
+await page.waitForTimeout(200);
+await page.getByRole("button", { name: "Insert on slide" }).click();
+await page.waitForFunction(() => (window.__shapes?.length ?? 0) > 0, null, { timeout: 8000 });
+const cylInfo = await page.evaluate(() => ({
+  hasCan: window.__shapes.some((s) => s.geo === "Can"),
+  geos: [...new Set(window.__shapes.map((s) => s.geo).filter(Boolean))],
+}));
+check("Bar-shape picker drives inserted geometry (Cylinder → Can)", cylInfo.hasCan, cylInfo.geos.join(","));
 check("pie disables the Editable-shapes option", await (async () => {
   await page.selectOption("select", "pie");
   await page.waitForTimeout(200);

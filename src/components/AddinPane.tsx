@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import PlottDataTab from "@/components/PlottDataTab";
+import ShapesPreview from "@/components/ShapesPreview";
 import StylePanel from "@/components/StylePanel";
 import { CHART_CATALOG, CHART_GROUP_LABELS, isChartKind } from "@/lib/charts/catalog";
 import ChartSVG from "@/lib/charts/ChartSVG";
@@ -23,7 +24,7 @@ import {
   type SelectionKind,
 } from "@/lib/office/insert";
 import { matchSelectedChart } from "@/lib/office/native";
-import { supportsShapes } from "@/lib/office/shapes";
+import { geoOptions, GEO_LABEL, effectiveGeo, supportsShapes } from "@/lib/office/shapes";
 import { getDocument, saveDocument } from "@/lib/store/db";
 import type { ChartDocument, ChartKind, ChartSpec, DataTable } from "@/lib/types";
 
@@ -83,6 +84,10 @@ export default function AddinPane() {
   const restyling = !!restyleDoc;
   const canShapes = supportsShapes(spec.kind);
   const effectiveInsertAs = nativeRect ? "image" : canShapes ? insertAs : "image";
+  const shapeGeos = geoOptions(spec.kind);
+  const activeGeo = effectiveGeo(spec);
+  const isMarkerKind =
+    spec.kind === "scatter" || spec.kind === "bubble" || spec.kind === "line" || spec.kind === "lineMulti";
 
   // Load Office.js on demand, then detect whether we're inside PowerPoint.
   useEffect(() => {
@@ -295,10 +300,14 @@ export default function AddinPane() {
         )}
 
         <div
-          className={`mx-auto w-full overflow-hidden rounded-lg border border-border ${transparent ? "cf-checkerboard" : ""}`}
+          className={`mx-auto w-full overflow-hidden rounded-lg border border-border ${transparent && effectiveInsertAs !== "shapes" ? "cf-checkerboard" : ""}`}
           style={{ aspectRatio: `${EXPORT_W} / ${EXPORT_H}`, maxHeight: 196 }}
         >
-          <ChartSVG spec={spec} data={data} width={PREVIEW_W} height={PREVIEW_H} transparent={transparent} showTitle fluid />
+          {effectiveInsertAs === "shapes" ? (
+            <ShapesPreview spec={spec} data={data} width={EXPORT_W} height={EXPORT_H} />
+          ) : (
+            <ChartSVG spec={spec} data={data} width={PREVIEW_W} height={PREVIEW_H} transparent={transparent} showTitle fluid />
+          )}
         </div>
 
         {restyling ? (
@@ -417,6 +426,11 @@ export default function AddinPane() {
             style={spec.style}
             onChange={(style) => setSpec((s) => ({ ...s, style }))}
             treatments={effectiveInsertAs === "shapes" ? SHAPE_TREATMENTS : undefined}
+            renderSwatch={
+              effectiveInsertAs === "shapes"
+                ? (swatchSpec, swatchData) => <ShapesPreview spec={swatchSpec} data={swatchData} width={320} height={200} compact />
+                : undefined
+            }
             beforeTreatments={
               <div className="mb-[18px] flex flex-col gap-2.5 border-b border-rule pb-4">
                 <label className="flex items-center gap-2 text-muted">
@@ -449,7 +463,32 @@ export default function AddinPane() {
                   </div>
                 </div>
                 {effectiveInsertAs === "shapes" && (
-                  <p className="text-[11px] text-muted">Shape styles use solid fills, outlines &amp; rounded corners (no gradients/shadows — those are image-only).</p>
+                  <p className="text-[11px] text-muted">Native PowerPoint shapes — solid fills, outlines &amp; preset geometry (no gradients/shadows — those are image-only).</p>
+                )}
+                {effectiveInsertAs === "shapes" && shapeGeos.length > 1 && (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="plott-mono text-[10px] uppercase tracking-[0.12em] text-faint">{isMarkerKind ? "Marker" : "Bar shape"}</span>
+                    <div className="grid grid-cols-3 gap-2">
+                      {shapeGeos.map((g) => {
+                        const active = activeGeo === g;
+                        return (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() => setSpec((s) => ({ ...s, style: { ...s.style, shapeGeo: g } }))}
+                            aria-label={`Shape ${GEO_LABEL[g]}`}
+                            aria-pressed={active}
+                            className={`block rounded-md border p-1 text-left ${active ? "border-accent ring-1 ring-accent" : "border-rule hover:border-border"}`}
+                          >
+                            <div className="w-full overflow-hidden rounded-[3px]" style={{ aspectRatio: "16 / 10" }}>
+                              <ShapesPreview spec={{ ...spec, title: "", style: { ...spec.style, shapeGeo: g } }} data={data} width={EXPORT_W} height={EXPORT_H} compact />
+                            </div>
+                            <div className="mt-1 text-center text-[10.5px] text-ink">{GEO_LABEL[g]}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
               </div>
             }

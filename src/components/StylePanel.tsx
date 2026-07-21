@@ -45,6 +45,7 @@ export default function StylePanel({
   onChange,
   treatments = TREATMENT_ORDER,
   beforeTreatments,
+  renderSwatch,
 }: {
   kind: ChartKind;
   style: ChartStyle;
@@ -53,6 +54,9 @@ export default function StylePanel({
   treatments?: readonly TreatmentKey[];
   /** Optional controls rendered between the palette row and the treatment gallery. */
   beforeTreatments?: React.ReactNode;
+  /** Override the swatch renderer (the add-in uses this to preview editable shapes
+   *  via `ShapesPreview` so the gallery matches what gets inserted). */
+  renderSwatch?: (spec: ChartSpec, data: DataTable) => React.ReactNode;
 }) {
   const paletteKey: PaletteKey = isPaletteKey(style.paletteName ?? "")
     ? (style.paletteName as PaletteKey)
@@ -130,7 +134,11 @@ export default function StylePanel({
               }`}
             >
               <div className="w-full overflow-hidden rounded-[5px]" style={{ aspectRatio: "16 / 10" }}>
-                <ChartSVG spec={miniSpec(kind, previewStyle)} data={MINI_DATA} width={320} height={200} fluid showTitle={false} />
+                {renderSwatch ? (
+                  renderSwatch(miniSpec(kind, previewStyle), MINI_DATA)
+                ) : (
+                  <ChartSVG spec={miniSpec(kind, previewStyle)} data={MINI_DATA} width={320} height={200} fluid showTitle={false} />
+                )}
               </div>
               <div className="mt-1.5 text-[11.5px] text-ink">{TREATMENTS[key].name}</div>
             </button>

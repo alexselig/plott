@@ -69,6 +69,23 @@ export interface ChartEncoding {
   secondaryY?: string[];
 }
 
+/**
+ * Native-shape geometry for "Insert as editable shapes". Each maps to a
+ * PowerPoint `GeometricShapeType` preset (mapping lives in `office/bridge.ts`).
+ * Bars use rectangle/roundRectangle/roundTop/snipTop/cylinder/bevel; scatter and
+ * line markers use ellipse/diamond/triangle.
+ */
+export type GeoShape =
+  | "rectangle"
+  | "roundRectangle"
+  | "roundTop"
+  | "snipTop"
+  | "cylinder"
+  | "bevel"
+  | "ellipse"
+  | "diamond"
+  | "triangle";
+
 export interface ChartStyle {
   palette: string[];
   showLegend: boolean;
@@ -114,6 +131,10 @@ export interface ChartStyle {
   colorOverrides?: Record<number, string>;
   /** Export the chart with a transparent background (drops onto any slide). */
   transparentBackground?: boolean;
+  /** Geometry for "Insert as editable shapes" (bars use rectangle/roundRectangle/
+   *  roundTop/snipTop/cylinder/bevel; scatter/line markers use ellipse/diamond/
+   *  triangle). Undefined => per-treatment default. Only affects shapes export. */
+  shapeGeo?: GeoShape;
 
   /* ---- Plott "look & feel" treatment (optional; defaulted by renderer) ---- */
   /** Chart canvas background color (behind the plot). */

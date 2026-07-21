@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { sampleFor } from "@/lib/charts/sample";
 import { applyTreatment } from "@/lib/charts/styles";
 import type { PointRect } from "@/lib/office/geometry";
-import { chartToShapes, lineToRect, shapeMark, supportsShapes, type ShapeDraw } from "@/lib/office/shapes";
+import { chartToShapes, effectiveGeo, geoOptions, lineToRect, shapeMark, supportsShapes, type ShapeDraw } from "@/lib/office/shapes";
 import type { ChartKind } from "@/lib/types";
 
 const RECT: PointRect = { left: 100, top: 50, width: 600, height: 360 };
@@ -102,21 +102,80 @@ describe("chartToShapes — unsupported", () => {
 });
 
 describe("shapeMark treatment mapping", () => {
-  it("rounds capsule bars, outlines brutalist/monoSignal, leaves studioFlat flat", () => {
+  it("maps treatments to distinct geometry + outline + marker", () => {
     const base = sampleFor("bar").spec;
-    expect(shapeMark({ ...base, style: applyTreatment(base.style, "capsule") })).toEqual({ rounded: true });
+    const capsule = shapeMark({ ...base, style: applyTreatment(base.style, "capsule") });
+    expect(capsule.geo).toBe("roundRectangle");
+    expect(capsule.line).toBeUndefined();
     expect(shapeMark({ ...base, style: applyTreatment(base.style, "brutalist") }).line).toBeTruthy();
+    expect(shapeMark({ ...base, style: applyTreatment(base.style, "brutalist") }).marker).toBe("diamond");
+    expect(shapeMark({ ...base, style: applyTreatment(base.style, "monoSignal") }).geo).toBe("roundTop");
     expect(shapeMark({ ...base, style: applyTreatment(base.style, "monoSignal") }).line).toBeTruthy();
-    expect(shapeMark({ ...base, style: applyTreatment(base.style, "studioFlat") })).toEqual({ rounded: false });
+    const flat = shapeMark({ ...base, style: applyTreatment(base.style, "studioFlat") });
+    expect(flat.geo).toBe("rectangle");
+    expect(flat.line).toBeUndefined();
   });
 
-  it("carries the mark onto bar draws (capsule rounded, brutalist outlined)", () => {
+  it("lets style.shapeGeo override the bar geometry", () => {
+    const base = sampleFor("bar").spec;
+    expect(shapeMark({ ...base, style: { ...base.style, shapeGeo: "cylinder" } }).geo).toBe("cylinder");
+    // A marker-only geo doesn't change the bar geo (falls back to the default).
+    expect(shapeMark({ ...base, style: { ...base.style, shapeGeo: "diamond" } }).geo).not.toBe("diamond");
+  });
+
+  it("carries the geometry onto bar draws", () => {
     const base = sampleFor("bar");
     const capsuleBars = chartToShapes({ ...base.spec, style: applyTreatment(base.spec.style, "capsule") }, base.data, RECT).filter((d) => d.kind === "rect");
     expect(capsuleBars.length).toBeGreaterThan(0);
-    expect(capsuleBars.every((d) => d.kind === "rect" && d.rounded === true)).toBe(true);
+    expect(capsuleBars.every((d) => d.kind === "rect" && d.geo === "roundRectangle")).toBe(true);
     const brutalBars = chartToShapes({ ...base.spec, style: applyTreatment(base.spec.style, "brutalist") }, base.data, RECT).filter((d) => d.kind === "rect");
     expect(brutalBars.every((d) => d.kind === "rect" && !!d.line)).toBe(true);
+    const cyl = chartToShapes({ ...base.spec, style: { ...base.spec.style, shapeGeo: "cylinder" } }, base.data, RECT).filter((d) => d.role.startsWith("bar"));
+    expect(cyl.every((d) => d.kind === "rect" && d.geo === "cylinder")).toBe(true);
+  });
+
+  it("re-maps orientation-dependent geometry for horizontal bars", () => {
+    const base = sampleFor("barHorizontal");
+    const bars = chartToShapes({ ...base.spec, style: { ...base.spec.style, shapeGeo: "cylinder" } }, base.data, RECT).filter((d) => d.role.startsWith("bar"));
+    expect(bars.length).toBeGreaterThan(0);
+    // cylinder can't be oriented sideways via the API → rounded rectangle.
+    expect(bars.every((d) => d.kind === "rect" && d.geo === "roundRectangle")).toBe(true);
+  });
+
+  it("renders scatter markers with the chosen geometry", () => {
+    const base = sampleFor("scatter");
+    const dots = chartToShapes(base.spec, base.data, RECT).filter((d) => d.role.startsWith("point"));
+    expect(dots.length).toBeGreaterThan(0);
+    expect(dots.every((d) => d.kind === "ellipse")).toBe(true);
+    const diamonds = chartToShapes({ ...base.spec, style: { ...base.spec.style, shapeGeo: "diamond" } }, base.data, RECT).filter((d) => d.role.startsWith("point"));
+    expect(diamonds.every((d) => d.kind === "rect" && d.geo === "diamond")).toBe(true);
+  });
+});
+
+describe("compact mode + geometry options", () => {
+  it("compact drops chrome, keeping only chart marks", () => {
+    const base = sampleFor("bar");
+    const full = chartToShapes(base.spec, base.data, RECT);
+    const compact = chartToShapes(base.spec, base.data, RECT, true);
+    expect(full.some((d) => d.role === "x-axis" || d.role === "title" || d.role.startsWith("x-label"))).toBe(true);
+    expect(compact.length).toBeGreaterThan(0);
+    expect(compact.every((d) => d.role.startsWith("bar") || d.role.startsWith("point") || d.role.startsWith("line"))).toBe(true);
+  });
+
+  it("offers orientation-appropriate geometry options", () => {
+    expect(geoOptions("bar")).toContain("cylinder");
+    expect(geoOptions("bar")).toContain("roundTop");
+    expect(geoOptions("barHorizontal")).not.toContain("roundTop");
+    expect(geoOptions("scatter")).toEqual(["ellipse", "diamond", "triangle"]);
+  });
+
+  it("effectiveGeo reflects the default and any override", () => {
+    const base = sampleFor("bar").spec;
+    expect(effectiveGeo({ ...base, style: applyTreatment(base.style, "capsule") })).toBe("roundRectangle");
+    expect(effectiveGeo({ ...base, style: { ...base.style, shapeGeo: "bevel" } })).toBe("bevel");
+    const scat = sampleFor("scatter").spec;
+    expect(effectiveGeo(scat)).toBe("ellipse");
+    expect(effectiveGeo({ ...scat, style: { ...scat.style, shapeGeo: "triangle" } })).toBe("triangle");
   });
 });
 
