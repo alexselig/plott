@@ -224,6 +224,70 @@ describe("slide parsing", () => {
     </p:graphicFrame></p:spTree></p:cSld></p:sld>`;
     expect(parseSlideCharts(table)).toHaveLength(0);
   });
+
+  it("finds a chart nested inside a group", () => {
+    const grouped = `<p:sld ${P} ${A} ${R}><p:cSld><p:spTree>
+      <p:grpSp>
+        <p:grpSpPr/>
+        <p:graphicFrame>
+          <p:nvGraphicFramePr><p:cNvPr id="7" name="Chart in group"/></p:nvGraphicFramePr>
+          <p:xfrm><a:off x="10" y="20"/><a:ext cx="30" cy="40"/></p:xfrm>
+          <a:graphic><a:graphicData uri="${CHART_URI}"><c:chart ${C} r:id="rId9"/></a:graphicData></a:graphic>
+        </p:graphicFrame>
+      </p:grpSp>
+    </p:spTree></p:cSld></p:sld>`;
+    const frames = parseSlideCharts(grouped);
+    expect(frames).toHaveLength(1);
+    expect(frames[0].chartRId).toBe("rId9");
+    expect(frames[0].graphicFrameId).toBe(7);
+  });
+
+  it("unwraps mc:AlternateContent, preferring the classic-chart choice", () => {
+    const MC = 'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"';
+    const wrapped = `<p:sld ${P} ${A} ${R} ${MC}><p:cSld><p:spTree>
+      <mc:AlternateContent>
+        <mc:Choice Requires="a14">
+          <p:graphicFrame>
+            <p:nvGraphicFramePr><p:cNvPr id="11" name="Compat chart"/></p:nvGraphicFramePr>
+            <p:xfrm><a:off x="1" y="2"/><a:ext cx="3" cy="4"/></p:xfrm>
+            <a:graphic><a:graphicData uri="${CHART_URI}"><c:chart ${C} r:id="rIdAC"/></a:graphicData></a:graphic>
+          </p:graphicFrame>
+        </mc:Choice>
+        <mc:Fallback>
+          <p:pic><p:nvPicPr><p:cNvPr id="12" name="fallback image"/></p:nvPicPr></p:pic>
+        </mc:Fallback>
+      </mc:AlternateContent>
+    </p:spTree></p:cSld></p:sld>`;
+    const frames = parseSlideCharts(wrapped);
+    expect(frames).toHaveLength(1);
+    expect(frames[0].chartRId).toBe("rIdAC");
+  });
+
+  it("falls back to mc:Fallback when the choice has no classic chart (e.g. chartEx)", () => {
+    const MC = 'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"';
+    const CX = 'xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex"';
+    const wrapped = `<p:sld ${P} ${A} ${R} ${MC}><p:cSld><p:spTree>
+      <mc:AlternateContent>
+        <mc:Choice ${CX} Requires="cx1">
+          <p:graphicFrame>
+            <p:nvGraphicFramePr><p:cNvPr id="21" name="chartEx"/></p:nvGraphicFramePr>
+            <p:xfrm><a:off x="0" y="0"/><a:ext cx="5" cy="5"/></p:xfrm>
+            <a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/drawing/2014/chartex"><cx:chart r:id="rIdCx"/></a:graphicData></a:graphic>
+          </p:graphicFrame>
+        </mc:Choice>
+        <mc:Fallback>
+          <p:graphicFrame>
+            <p:nvGraphicFramePr><p:cNvPr id="22" name="classic fallback"/></p:nvGraphicFramePr>
+            <p:xfrm><a:off x="0" y="0"/><a:ext cx="5" cy="5"/></p:xfrm>
+            <a:graphic><a:graphicData uri="${CHART_URI}"><c:chart ${C} r:id="rIdFB"/></a:graphicData></a:graphic>
+          </p:graphicFrame>
+        </mc:Fallback>
+      </mc:AlternateContent>
+    </p:spTree></p:cSld></p:sld>`;
+    const frames = parseSlideCharts(wrapped);
+    expect(frames).toHaveLength(1);
+    expect(frames[0].chartRId).toBe("rIdFB");
+  });
 });
 
 describe("presentation + rels", () => {

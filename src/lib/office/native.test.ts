@@ -6,7 +6,7 @@ vi.mock("@/lib/pptx/slidePreview", () => ({ readSlidePreview: vi.fn() }));
 import { blankSpec } from "@/lib/charts/catalog";
 import type { OfficeBridge } from "@/lib/office/bridge";
 import type { PointRect } from "@/lib/office/geometry";
-import { matchSelectedChart } from "@/lib/office/native";
+import { matchSelectedChart, type MatchDiag } from "@/lib/office/native";
 import { readPptx } from "@/lib/pptx";
 import { readSlidePreview } from "@/lib/pptx/slidePreview";
 import type { ChartKind, DataTable } from "@/lib/types";
@@ -97,6 +97,37 @@ describe("matchSelectedChart", () => {
     });
     expect(await matchSelectedChart(bridgeFor(0))).toBeNull();
     expect(readSlidePreview).not.toHaveBeenCalled();
+  });
+
+  it("reports diagnostics for both the hit and the miss paths", async () => {
+    vi.mocked(readSlidePreview).mockReturnValue({ bg: "#ffffff", shapes: [] });
+    // Miss: no charts in the deck.
+    vi.mocked(readPptx).mockReturnValue({
+      slideSize: { cx: 12192000, cy: 6858000 },
+      charts: [],
+      overlays: [],
+      palette: [],
+    });
+    let diag: MatchDiag | null = null;
+    await matchSelectedChart(bridgeFor(0, { left: 0, top: 0, width: 1, height: 1 }), (d) => (diag = d));
+    expect(diag).not.toBeNull();
+    expect(diag!.totalCharts).toBe(0);
+    expect(diag!.deckBytes).toBe(3); // bridgeFor returns a 3-byte deck
+    expect(diag!.selectionType).toBe("Chart");
+    expect(diag!.picked).toBeUndefined();
+
+    // Hit: one chart, diagnostics carry the picked title + row count.
+    vi.mocked(readPptx).mockReturnValue({
+      slideSize: { cx: 12192000, cy: 6858000 },
+      charts: [chart(0, "bar")],
+      overlays: [],
+      palette: [],
+    });
+    diag = null;
+    const match = await matchSelectedChart(bridgeFor(0), (d) => (diag = d));
+    expect(match).not.toBeNull();
+    expect(diag!.totalCharts).toBe(1);
+    expect(diag!.picked).toEqual({ title: "chart 0", rows: 1, slideIndex: 0 });
   });
 
   it("disambiguates multiple charts on a slide by the selected shape's footprint", async () => {

@@ -23,7 +23,7 @@ import {
   replaceSelectedChart,
   type SelectionKind,
 } from "@/lib/office/insert";
-import { matchSelectedChart } from "@/lib/office/native";
+import { matchSelectedChart, type MatchDiag } from "@/lib/office/native";
 import { geoOptions, GEO_LABEL, effectiveGeo, supportsShapes } from "@/lib/office/shapes";
 import { getDocument, saveDocument } from "@/lib/store/db";
 import type { ChartDocument, ChartKind, ChartSpec, DataTable } from "@/lib/types";
@@ -161,9 +161,19 @@ export default function AddinPane() {
         setStatus("Open in PowerPoint and select a chart on the slide.");
         return;
       }
-      const match = await matchSelectedChart(powerPointBridge());
+      const diagRef: { current: MatchDiag | null } = { current: null };
+      const match = await matchSelectedChart(powerPointBridge(), (d) => {
+        diagRef.current = d;
+        console.info("[Plott] Style Excel Chart diagnostics:", d);
+      });
+      const diag = diagRef.current;
       if (!match) {
-        setStatus("Couldn't find a chart in this presentation.");
+        const kb = diag ? Math.round(diag.deckBytes / 1024) : 0;
+        setStatus(
+          diag && diag.deckBytes > 0
+            ? `Read ${kb} KB from PowerPoint but found no charts to import. If the chart was just pasted, save the deck (⌘S) and try again.`
+            : "Couldn't read the presentation. Save the deck (⌘S) and try again.",
+        );
         return;
       }
       setRestyleDoc(null);
@@ -172,7 +182,8 @@ export default function AddinPane() {
       setData(structuredClone(match.data));
       setNativeRect(match.rect);
       setTab("style");
-      setStatus(`Pulled “${match.title || "chart"}” (${match.data.rows.length} rows) from slide ${match.slideIndex + 1}. Style it, then Insert to overlay.`);
+      const other = diag && diag.totalCharts > 1 ? ` of ${diag.totalCharts} in the deck` : "";
+      setStatus(`Pulled “${match.title || "chart"}” (${match.data.rows.length} rows) from slide ${match.slideIndex + 1}${other}. Style it, then Insert to overlay.`);
     } catch (e) {
       setStatus(errMsg(e));
     } finally {

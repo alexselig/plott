@@ -25,6 +25,17 @@ export interface MatchedChart {
   slideIndex: number;
 }
 
+/** Observability for the match flow, surfaced in the pane so real-PowerPoint
+ *  failures (which can't be reproduced from CLI) are diagnosable from the status. */
+export interface MatchDiag {
+  deckBytes: number;
+  totalCharts: number;
+  chartsOnActiveSlide: number;
+  slideIndex: number;
+  selectionType: string | null;
+  picked?: { title: string; rows: number; slideIndex: number };
+}
+
 /** Apply the deck's color set as the chart's palette (mirrors the import flow). */
 function withImportedPalette(spec: ChartSpec, palette: string[]): ChartSpec {
   if (palette.length < 2) return spec;
@@ -46,15 +57,40 @@ function footprintDistance(chart: ExtractedChart, geo: PointRect): number {
  * PPTX parser. The active slide index is only a hint — it's unreliable when a shape
  * (not a slide) is selected — so we disambiguate by the selected shape's footprint,
  * and fall back across the deck. Returns null only when the deck has no charts.
+ *
+ * The three host reads run **sequentially**, not via Promise.all: interleaving
+ * `getFileAsync` with `PowerPoint.run` batches is unreliable in PowerPoint on Mac
+ * (the same class of concurrency bug as fetching slices in parallel). Reading the
+ * selection first and serializing the file last also captures the freshest state.
  */
-export async function matchSelectedChart(bridge: OfficeBridge): Promise<MatchedChart | null> {
-  const [bytes, slideIndex, sel] = await Promise.all([
-    bridge.getDocumentPptxBytes(),
-    bridge.getSelectedSlideIndex(),
-    bridge.readSelected(),
-  ]);
-  const read = readPptx(bytes);
-  if (read.charts.length === 0) return null;
+export async function matchSelectedChart(
+  bridge: OfficeBridge,
+  onDiag?: (d: MatchDiag) => void,
+): Promise<MatchedChart | null> {
+  const sel = await bridge.readSelected();
+  const slideIndex = await bridge.getSelectedSlideIndex();
+  const bytes = await bridge.getDocumentPptxBytes();
+  let read;
+  try {
+    read = readPptx(bytes);
+  } catch (e) {
+    const kb = Math.round(bytes.length / 1024);
+    throw new Error(
+      `Couldn't read the presentation PowerPoint returned (${kb} KB): ${e instanceof Error ? e.message : String(e)}. Try saving the deck (⌘S), then retry.`,
+    );
+  }
+
+  const diag: MatchDiag = {
+    deckBytes: bytes.length,
+    totalCharts: read.charts.length,
+    chartsOnActiveSlide: read.charts.filter((c) => c.slideIndex === slideIndex).length,
+    slideIndex,
+    selectionType: sel?.type ?? null,
+  };
+  if (read.charts.length === 0) {
+    onDiag?.(diag);
+    return null;
+  }
 
   // Prefer charts on the active slide; if the index didn't resolve, consider all.
   let candidates = read.charts.filter((c) => c.slideIndex === slideIndex);
@@ -76,5 +112,7 @@ export async function matchSelectedChart(bridge: OfficeBridge): Promise<MatchedC
 
   const paletted = withImportedPalette(pick.spec, read.palette);
   const spec: ChartSpec = { ...paletted, style: { ...paletted.style, bg } };
+  diag.picked = { title: pick.title, rows: pick.data.rows.length, slideIndex: pick.slideIndex };
+  onDiag?.(diag);
   return { spec, data: pick.data, title: pick.title, bg, rect: emuRectToPoints(pick.rect), slideIndex: pick.slideIndex };
 }

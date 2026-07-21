@@ -10,6 +10,9 @@ const BASE = process.env.BASE_URL || "http://localhost:3000";
 const OFFICE_MOCK = `
 (() => {
   const model = { shapes: [], selected: null };
+  // A real minimal .pptx (one bar chart) as base64 — returned by getFileAsync as a
+  // base64 STRING to exercise the PowerPoint-on-Mac slice path end to end.
+  const DECK_B64 = "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";
   window.__model = model;
   window.__select = (i) => { model.selected = model.shapes[i] ?? null; };
   window.__snapshot = () => model.shapes.map(s => ({
@@ -42,7 +45,7 @@ const OFFICE_MOCK = `
       requirements: { isSetSupported: () => true },
       document: {
         setSelectedDataAsync(data, opts, cb){ const s = makeShape(); s._base64 = data; model.shapes.push(s); model.selected = s; cb({ status: 'succeeded' }); },
-        getFileAsync(type, opts, cb){ const bytes = new Uint8Array([1,2,3,4]); const file = { sliceCount: 1, getSliceAsync(i, scb){ scb({ status: 'succeeded', value: { index: 0, data: bytes } }); }, closeAsync(ccb){ if (ccb) ccb({ status: 'succeeded' }); } }; cb({ status: 'succeeded', value: file }); },
+        getFileAsync(type, opts, cb){ const file = { sliceCount: 1, getSliceAsync(i, scb){ scb({ status: 'succeeded', value: { index: 0, data: DECK_B64 } }); }, closeAsync(ccb){ if (ccb) ccb({ status: 'succeeded' }); } }; cb({ status: 'succeeded', value: file }); },
         addHandlerAsync(eventType, handler, cb){ selHandlers.push(handler); if (cb) cb({ status: 'succeeded' }); },
         removeHandlerAsync(eventType, opts, cb){ const i = selHandlers.indexOf(opts && opts.handler); if (i >= 0) selHandlers.splice(i, 1); if (cb) cb({ status: 'succeeded' }); },
       },
@@ -192,8 +195,21 @@ await page.evaluate(() => window.__selectNative());
 await styleExcelBtn.waitFor({ state: "visible", timeout: 8000 });
 check("Style Excel Chart appears when a native chart is selected", true);
 await styleExcelBtn.click();
-await page.waitForFunction(() => (document.querySelector("p[data-status]")?.textContent || "").length > 0, null, { timeout: 8000 });
-check("Style Excel Chart is wired and handles the request", ((await page.locator("p[data-status]").textContent()) || "").length > 0);
+// The whole real pipeline runs: base64 slice -> bytes -> unzip -> parse chart ->
+// preview. Assert the pulled data actually lands (status names the rows + title).
+await page.waitForFunction(
+  () => /rows\)/.test(document.querySelector("p[data-status]")?.textContent || ""),
+  null,
+  { timeout: 8000 },
+);
+const excelStatus = (await page.locator("p[data-status]").textContent()) || "";
+check("Style Excel Chart pulls the chart data into the pane", /Quarterly Revenue/.test(excelStatus) && /4 rows/.test(excelStatus), excelStatus);
+// The preview should now reflect the imported chart (a column/bar chart).
+check(
+  "importing switches the pane to the native chart's type",
+  (await page.locator("select").inputValue()) === "bar",
+  `select=${await page.locator("select").inputValue()}`,
+);
 
 check("no page errors", errors.length === 0, errors[0] ?? "");
 const passed = results.filter(Boolean).length;

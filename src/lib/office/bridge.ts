@@ -7,6 +7,7 @@
  */
 
 import type { PointRect } from "@/lib/office/geometry";
+import { sliceToBytes } from "@/lib/office/host";
 import { lineToRect, type ShapeDraw } from "@/lib/office/shapes";
 import type { GeoShape } from "@/lib/types";
 
@@ -188,6 +189,10 @@ export function powerPointBridge(): OfficeBridge {
             if (i >= count) {
               file.closeAsync(() => {});
               const total = slices.reduce((n, s) => n + s.length, 0);
+              if (total === 0) {
+                reject(new Error("PowerPoint returned an empty document — try saving the deck, then retry."));
+                return;
+              }
               const out = new Uint8Array(total);
               let off = 0;
               for (const s of slices) {
@@ -203,8 +208,15 @@ export function powerPointBridge(): OfficeBridge {
                 reject(new Error(sliceRes.error?.message ?? "Couldn't read a slice of the presentation."));
                 return;
               }
-              const data = sliceRes.value.data as Uint8Array | ArrayLike<number>;
-              slices.push(data instanceof Uint8Array ? data : new Uint8Array(data));
+              try {
+                // `.data` may be a Uint8Array, ArrayBuffer, number[], or (on Mac) a
+                // base64 string — normalize each shape so the zip isn't corrupted.
+                slices.push(sliceToBytes(sliceRes.value.data));
+              } catch (err) {
+                file.closeAsync(() => {});
+                reject(err instanceof Error ? err : new Error(String(err)));
+                return;
+              }
               fetchNext(i + 1);
             });
           };

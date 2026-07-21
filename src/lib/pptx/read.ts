@@ -433,20 +433,40 @@ function readXfrmRect(xfrm: unknown): EmuRect {
   };
 }
 
-/** Find every chart graphicFrame in a slide (top level of the shape tree). */
+/** Pull chart graphicFrames from one shape-tree container node into `out`. Recurses
+ *  into groups (`p:grpSp`) and unwraps `mc:AlternateContent` (preferring `mc:Choice`,
+ *  falling back to `mc:Fallback`) so charts nested in groups or wrapped for
+ *  compatibility (common with Excel-pasted / modern charts) are still found. */
+function collectChartFrames(container: unknown, out: ChartFrame[]): void {
+  if (!container || typeof container !== "object") return;
+  const node = container as XmlNode;
+
+  for (const gf of asArray<XmlNode>(node["p:graphicFrame"])) {
+    const gd = child(child(gf, "a:graphic"), "a:graphicData");
+    if (attr(gd, "uri") !== CHART_URI) continue;
+    const chartRId = attr(child(gd, "c:chart"), "r:id");
+    if (!chartRId) continue;
+    const id = Number(attr(child(child(gf, "p:nvGraphicFramePr"), "p:cNvPr"), "id") ?? "0");
+    out.push({ graphicFrameId: id, rect: readXfrmRect(child(gf, "p:xfrm")), chartRId });
+  }
+
+  for (const grp of asArray<XmlNode>(node["p:grpSp"])) collectChartFrames(grp, out);
+
+  for (const ac of asArray<XmlNode>(node["mc:AlternateContent"])) {
+    const before = out.length;
+    for (const choice of asArray<XmlNode>(ac["mc:Choice"])) collectChartFrames(choice, out);
+    // Only consult the fallback when the (preferred) choice held no classic chart —
+    // e.g. a chartEx choice we can't parse, whose fallback may be a classic chart.
+    if (out.length === before) for (const fb of asArray<XmlNode>(ac["mc:Fallback"])) collectChartFrames(fb, out);
+  }
+}
+
+/** Find every chart graphicFrame in a slide (including inside groups / AlternateContent). */
 export function parseSlideCharts(slideXml: string): ChartFrame[] {
   const doc = parseXml(slideXml);
   const spTree = child(child(child(doc, "p:sld"), "p:cSld"), "p:spTree");
   const frames: ChartFrame[] = [];
-  for (const gf of asArray<XmlNode>(spTree?.["p:graphicFrame"])) {
-    const gd = child(child(gf, "a:graphic"), "a:graphicData");
-    if (attr(gd, "uri") !== CHART_URI) continue;
-    const cChart = child(gd, "c:chart");
-    const chartRId = attr(cChart, "r:id");
-    if (!chartRId) continue;
-    const id = Number(attr(child(child(gf, "p:nvGraphicFramePr"), "p:cNvPr"), "id") ?? "0");
-    frames.push({ graphicFrameId: id, rect: readXfrmRect(child(gf, "p:xfrm")), chartRId });
-  }
+  collectChartFrames(spTree, frames);
   return frames;
 }
 

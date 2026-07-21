@@ -45,6 +45,30 @@ export function base64FromBytes(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** Decode a base64 string to raw bytes. */
+export function bytesFromBase64(b64: string): Uint8Array {
+  const binary = atob(b64.trim());
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+/**
+ * Normalize one `File.getSliceAsync` payload into bytes. `Slice.data` is a byte
+ * array on most hosts, but PowerPoint on Mac has been observed to hand back a
+ * base64 string (and older hosts an ArrayBuffer / plain number[]). Treating a
+ * base64 string as an array-like silently zero-fills it and corrupts the zip, so
+ * decode each shape explicitly.
+ */
+export function sliceToBytes(data: unknown): Uint8Array {
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  if (typeof data === "string") return bytesFromBase64(data);
+  if (Array.isArray(data)) return Uint8Array.from(data as number[]);
+  throw new Error("Unrecognized document slice format from PowerPoint.");
+}
+
 /**
  * Subscribe to on-slide selection changes; returns an unsubscribe function.
  * No-op (returns a no-op) outside the Office host so the pane can call it freely.
