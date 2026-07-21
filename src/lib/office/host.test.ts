@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assembleDocumentSlices, base64FromBytes, bytesFromBase64, hexPreview, looksLikeZip, sliceToBytes } from "@/lib/office/host";
+import { assembleDocumentSlices, base64FromBytes, bytesFromBase64, hexPreview, looksLikeOle2, looksLikeZip, sliceToBytes } from "@/lib/office/host";
 
 /** A fake but signature-valid "zip": starts with PK\x03\x04 then arbitrary bytes. */
 function fakeZip(len = 40): Uint8Array {
@@ -73,6 +73,13 @@ describe("looksLikeZip / hexPreview", () => {
     expect(looksLikeZip(fakeZip())).toBe(true);
     expect(looksLikeZip(new Uint8Array([0x55, 0x45, 0x73, 0x44, 1, 2]))).toBe(false); // "UEsD" base64 text
     expect(looksLikeZip(new Uint8Array([0x50, 0x4b]))).toBe(false); // too short
+  });
+
+  it("recognizes the OLE2 / compound-file signature (encrypted / labeled decks)", () => {
+    const ole2 = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0]);
+    expect(looksLikeOle2(ole2)).toBe(true);
+    expect(looksLikeOle2(fakeZip())).toBe(false);
+    expect(looksLikeOle2(new Uint8Array([0xd0, 0xcf, 0x11]))).toBe(false); // too short
   });
 
   it("previews the first bytes as hex", () => {

@@ -76,6 +76,15 @@ export function looksLikeZip(bytes: Uint8Array): boolean {
   return bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
 }
 
+/** OLE2 / Compound File Binary Format signature (D0 CF 11 E0 A1 B1 1A E1). Office
+ *  wraps encrypted / sensitivity-labeled documents (and legacy binary .ppt/.xls)
+ *  in this container, so `getFileAsync` hands back an OLE2 blob rather than the
+ *  OOXML zip — the plaintext is protected and can't be read by the add-in. */
+export function looksLikeOle2(bytes: Uint8Array): boolean {
+  const sig = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+  return bytes.length >= 8 && sig.every((b, i) => bytes[i] === b);
+}
+
 /** Hex dump of the first `n` bytes (for diagnosing a bad document read). */
 export function hexPreview(bytes: Uint8Array, n = 8): string {
   return Array.from(bytes.subarray(0, n))

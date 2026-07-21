@@ -9,7 +9,7 @@
 
 import type { OfficeBridge } from "@/lib/office/bridge";
 import { emuRectToPoints, type PointRect } from "@/lib/office/geometry";
-import { hexPreview, looksLikeZip } from "@/lib/office/host";
+import { hexPreview, looksLikeOle2, looksLikeZip } from "@/lib/office/host";
 import { readPptx } from "@/lib/pptx";
 import { readSlidePreview } from "@/lib/pptx/slidePreview";
 import type { ExtractedChart } from "@/lib/pptx/types";
@@ -71,6 +71,16 @@ export async function matchSelectedChart(
   const sel = await bridge.readSelected();
   const slideIndex = await bridge.getSelectedSlideIndex();
   const bytes = await bridge.getDocumentPptxBytes();
+
+  // Sensitivity-labeled / password-protected (and legacy binary) decks come back as
+  // an encrypted OLE2 container, not the OOXML zip — the plaintext is protected, so
+  // there's nothing the add-in can unzip. Detect it up front and explain the fix.
+  if (looksLikeOle2(bytes)) {
+    throw new Error(
+      "This presentation is protected — a sensitivity label or password encrypts it, so PowerPoint returns an encrypted copy the add-in can't read. Remove or change the label to one without encryption (or “Save As” an unlabeled .pptx), reopen it, then retry. You can still build a chart here and insert it onto the slide.",
+    );
+  }
+
   let read;
   try {
     read = readPptx(bytes);

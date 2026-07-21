@@ -49,6 +49,11 @@ function bridgeFor(slideIndex: number, geo?: PointRect): OfficeBridge {
   };
 }
 
+/** A bridge whose document read returns the given bytes (e.g. an OLE2 blob). */
+function bridgeWithBytes(bytes: Uint8Array): OfficeBridge {
+  return { ...bridgeFor(0, { left: 0, top: 0, width: 1, height: 1 }), getDocumentPptxBytes: async () => bytes };
+}
+
 beforeEach(() => {
   vi.mocked(readPptx).mockReset();
   vi.mocked(readSlidePreview).mockReset();
@@ -128,6 +133,15 @@ describe("matchSelectedChart", () => {
     expect(match).not.toBeNull();
     expect(diag!.totalCharts).toBe(1);
     expect(diag!.picked).toEqual({ title: "chart 0", rows: 1, slideIndex: 0 });
+  });
+
+  it("explains protection instead of parsing an encrypted (OLE2) deck", async () => {
+    // A sensitivity-labeled / password-protected deck comes back as an OLE2
+    // compound file (D0CF11E0…), not an OOXML zip.
+    const ole2 = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]);
+    await expect(matchSelectedChart(bridgeWithBytes(ole2))).rejects.toThrow(/protected/i);
+    // We should bail before even attempting to parse it as a zip.
+    expect(readPptx).not.toHaveBeenCalled();
   });
 
   it("disambiguates multiple charts on a slide by the selected shape's footprint", async () => {
