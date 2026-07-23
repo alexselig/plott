@@ -1,0 +1,6 @@
+1:"$Sreact.fragment"
+2:I[1986,["/plott/_next/static/chunks/05-c3ty_6dwfk.js","/plott/_next/static/chunks/14mrh2-p_w84d.js","/plott/_next/static/chunks/1e0ods_qqr07y.js","/plott/_next/static/chunks/0u67enzvlo2k4.js","/plott/_next/static/chunks/24jm_wcrk-vid.js"],"default"]
+3:I[97367,["/plott/_next/static/chunks/05-c3ty_6dwfk.js","/plott/_next/static/chunks/14mrh2-p_w84d.js"],"OutletBoundary"]
+4:"$Sreact.suspense"
+0:{"rsc":["$","$1","c",{"children":[["$","$L2",null,{}],[["$","script","script-0",{"src":"/plott/_next/static/chunks/1e0ods_qqr07y.js","async":true}],["$","script","script-1",{"src":"/plott/_next/static/chunks/0u67enzvlo2k4.js","async":true}],["$","script","script-2",{"src":"/plott/_next/static/chunks/24jm_wcrk-vid.js","async":true}]],["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"U3up4xti5VX4S1untu0ei"}
+5:null
