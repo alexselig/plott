@@ -44,12 +44,13 @@ export default function PlottDataTab({
 
   return (
     <div>
-      <div className="plott-mono mb-2.5 grid grid-cols-[1fr_74px] gap-2 text-[10px] uppercase tracking-[0.12em] text-faint">
+      <div className="plott-mono mb-2.5 grid grid-cols-[1fr_74px_28px] gap-2 text-[10px] uppercase tracking-[0.12em] text-faint">
         <span>Label</span>
         <span className="text-right">Value</span>
+        <span />
       </div>
       {data.rows.map((r, i) => (
-        <div key={i} className="group relative mb-2 grid grid-cols-[1fr_74px] gap-2">
+        <div key={i} className="mb-2 grid grid-cols-[1fr_74px_28px] items-center gap-2">
           <input
             value={String(r[xKey] ?? "")}
             onChange={(e) => setRow(i, { [xKey]: e.target.value })}
@@ -63,16 +64,16 @@ export default function PlottDataTab({
             aria-label={`Row ${i + 1} value`}
             className="rounded-md border border-rule bg-panel px-2.5 py-2 text-right text-[13px] text-ink outline-none focus:border-accent"
           />
-          {data.rows.length > 1 && (
-            <button
-              type="button"
-              onClick={() => removeRow(i)}
-              aria-label={`Remove row ${i + 1}`}
-              className="absolute -left-4 top-1/2 hidden -translate-y-1/2 text-[13px] leading-none text-faint hover:text-accent group-hover:block"
-            >
-              ×
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => removeRow(i)}
+            disabled={data.rows.length <= 1}
+            aria-label={`Remove row ${i + 1}`}
+            title="Remove row"
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-rule text-[16px] leading-none text-faint hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            ×
+          </button>
         </div>
       ))}
       <button

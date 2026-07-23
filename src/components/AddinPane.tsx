@@ -550,7 +550,9 @@ export default function AddinPane() {
         </div>
       )}
 
-      {/* Frozen: live preview / editor + actions. Everything else scrolls under it. */}
+      {/* Frozen: live preview / editor + actions. Collapsed while editing (its content
+          moves into the scroll body), so there's no empty bar above the tabs. */}
+      {!editing && (
       <div className="z-10 flex shrink-0 flex-col gap-2 border-b border-border bg-paper px-3 pb-2.5 pt-3 shadow-[0_6px_16px_-12px_rgba(0,0,0,0.4)]">
         {appMode === "shapes" && restyling && (
           <div className="flex items-center justify-between rounded-md border border-accent/40 bg-accent/5 px-3 py-1.5">
@@ -643,8 +645,9 @@ export default function AddinPane() {
           </div>
         )}
 
-        {status && <p data-status className="text-[12px] text-muted">{status}</p>}
+        {appMode !== "edit" && status && <p data-status className="text-[12px] text-muted">{status}</p>}
       </div>
+      )}
 
       {/* Scrollable: (type/title only in shapes mode) + data/style controls, then the mode toggle. */}
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-3 py-3">
@@ -821,16 +824,13 @@ export default function AddinPane() {
         )}
 
         {editing && (
-          <div className="flex flex-col gap-2 border-t border-rule pt-3">
+          <div className="border-t border-rule pt-3">
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              className={`flex items-center justify-center gap-1.5 ${PRIMARY_BTN}`}
+              className={`flex w-full items-center justify-center gap-1.5 ${PRIMARY_BTN}`}
             >
               <ExpandIcon /> Edit visually
-            </button>
-            <button type="button" onClick={stopEditing} className="text-center text-[12px] font-medium text-accent hover:underline">
-              Stop editing this chart
             </button>
           </div>
         )}
@@ -852,6 +852,18 @@ export default function AddinPane() {
             ))}
           </div>
         </div>
+
+        {/* Edit-mode status: a footer that scrolls with the content (not pinned to the top). */}
+        {appMode === "edit" && status && (
+          <p data-status className="border-t border-rule pt-3 text-[12px] text-muted">
+            {status}
+          </p>
+        )}
+        {editing && (
+          <button type="button" onClick={stopEditing} className="text-center text-[12px] font-medium text-accent hover:underline">
+            Stop editing this chart
+          </button>
+        )}
       </div>
 
       {/* Offscreen, export-fidelity render used to rasterize the PNG placed on the slide. */}

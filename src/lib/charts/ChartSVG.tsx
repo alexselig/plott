@@ -179,9 +179,10 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     const b = el.getBoundingClientRect();
     const r = svg.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return;
+    // Horizontal center of the dragged item, and its top, mapped into SVG coords.
     const cx = ((b.left + b.width / 2 - r.left) / r.width) * width;
     const topY = ((b.top - r.top) / r.height) * height;
-    const offset = 50 * (height / r.height); // 50 screen px, in SVG units
+    const offset = 10 * (height / r.height); // 10 screen px above the item top, in SVG units
     setDragLabel({ x: cx, y: topY - offset, text });
   }
 
@@ -341,14 +342,15 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
   // Floating value pill shown above the dragged mark (drag-to-edit feedback).
   const dragLabelEl = dragLabel
     ? (() => {
-        const w = Math.max(26, dragLabel.text.length * 7 + 14);
-        const h = 19;
+        const fs = 22; // 2x the previous size
+        const h = 30;
+        const w = Math.max(40, dragLabel.text.length * 13 + 20);
         const x = Math.max(2, Math.min(width - w - 2, dragLabel.x - w / 2));
         const y = Math.max(2, dragLabel.y - h);
         return (
           <g pointerEvents="none">
-            <rect x={x} y={y} width={w} height={h} rx={5} fill="#1f1c17" opacity={0.92} />
-            <text x={x + w / 2} y={y + h / 2 + 3.5} textAnchor="middle" fontSize={11} fontWeight={700} fill="#ffffff" fontFamily={labelFont}>
+            <rect x={x} y={y} width={w} height={h} rx={7} fill="#1f1c17" opacity={0.92} />
+            <text x={x + w / 2} y={y + h / 2} dominantBaseline="central" textAnchor="middle" fontSize={fs} fontWeight={700} fill="#ffffff" fontFamily={labelFont}>
               {dragLabel.text}
             </text>
           </g>

@@ -343,6 +343,13 @@ if (await valueInput.count()) {
 }
 const appliesAfter = await page.evaluate(() => window.__applyCount);
 check("editing a value auto-applies to the slide", appliesAfter > appliesBefore, `${appliesBefore} -> ${appliesAfter}`);
+// Remove a row -> the table shrinks and it auto-applies to the slide.
+const rowsBefore = await page.locator('input[type="number"]').count();
+const beforeRemove = await page.evaluate(() => window.__applyCount);
+await page.getByRole("button", { name: /Remove row/ }).first().click();
+await page.waitForTimeout(750);
+const rowsAfter = await page.locator('input[type="number"]').count();
+check("removing a row updates the table + slide", rowsAfter === rowsBefore - 1 && (await page.evaluate(() => window.__applyCount)) > beforeRemove, `${rowsBefore} -> ${rowsAfter}`);
 // "Edit visually" opens the drag editor; dragging there also auto-applies to the slide.
 await page.getByRole("button", { name: "Edit visually" }).click();
 const editDialog = page.getByRole("dialog", { name: "Chart editor" });
