@@ -17,6 +17,11 @@ What it does:
   shape-mode style swatches render the exact `chartToShapes` output (so what you see is
   what gets inserted); the image path keeps the full treatment styling (gradients/shadows).
 - **Restyle a Plott chart** already on a slide — select it, tweak, update in place.
+- **Expand & live-edit** — a button on the preview opens a full-pane editor where you
+  drag bars/columns and scatter/bubble points to change their values directly (the same
+  direct-manipulation editing as the web app), then insert/update. Office has no API to
+  widen the host task pane, so the editor uses all available pane space (drag the pane
+  wider for more room).
 - **Match a native chart** — select a native PowerPoint chart, pull its data (via
   `getFileAsync` + Plott's PPTX parser), match the Plott chart's background to the
   slide's background color, then drop a styled image on top of it.

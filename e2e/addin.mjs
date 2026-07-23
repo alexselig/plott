@@ -117,6 +117,29 @@ check("switching type re-renders (pie arcs)", (await page.locator("svg path").co
 await page.selectOption("select", "bar");
 await page.waitForTimeout(300);
 
+// ---- expand-to-edit: open the full-pane editor and drag a bar to change its value ----
+await page.getByRole("button", { name: /Expand chart to edit values/ }).click();
+await page.waitForTimeout(300);
+const dialog = page.getByRole("dialog", { name: "Chart editor" });
+check("expand opens the full-pane editor", (await dialog.count()) === 1);
+check("editor shows the drag-to-edit affordance", (await dialog.getByText("Drag to edit").count()) === 1);
+// The editable bars are wrapped in a <g> with a ns-resize cursor; grab the first
+// and drag it upward, then confirm the bar geometry grew.
+const bar = dialog.locator('g[style*="ns-resize"]').first();
+const before = await bar.boundingBox();
+await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+await page.mouse.down();
+await page.mouse.move(before.x + before.width / 2, before.y - 60, { steps: 8 }); // drag up = larger value
+await page.mouse.up();
+await page.waitForTimeout(200);
+const after = await bar.boundingBox();
+check("dragging a bar changes its value (bar grows)", after.height > before.height + 4, `${Math.round(before.height)} -> ${Math.round(after.height)}`);
+// Collapse and confirm the edit persisted into the small preview.
+await dialog.getByRole("button", { name: "Collapse editor" }).click();
+await page.waitForTimeout(200);
+check("Done collapses the editor", (await page.getByRole("dialog", { name: "Chart editor" }).count()) === 0);
+
+
 // ---- gating: nothing is selected yet, so neither on-slide action shows ----
 check("Restyle hidden until a Plott chart is selected", (await page.getByRole("button", { name: "Restyle selected chart" }).count()) === 0);
 check("Style Excel Chart hidden until a native chart is selected", (await page.getByRole("button", { name: "Style Excel Chart" }).count()) === 0);

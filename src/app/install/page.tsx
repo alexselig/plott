@@ -150,6 +150,7 @@ export default function InstallPage() {
         <ul className="grid list-none grid-cols-1 gap-3 p-0 sm:grid-cols-2">
           {[
             ["Design a chart", "Pick a type, type or paste data, choose a palette and style — live preview as you go."],
+            ["Expand & drag to edit", "Open the full-pane editor and drag bars or points to change values, just like the web app."],
             ["Insert on the slide", "Drop it as a crisp image, or as native, editable PowerPoint shapes you can recolor."],
             ["Restyle what's there", "Select a Plott chart already on a slide and re-open it to tweak and update in place."],
             ["Style an Excel chart", "Select a native chart, pull its data into Plott, restyle it, and overlay it exactly."],

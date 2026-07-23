@@ -32,6 +32,11 @@ const DRAGGABLE: ChartKind[] = ["bar", "barHorizontal", "barGrouped", "line", "l
 // Kinds whose points support 2-D (x + y) drag editing.
 const POINT_DRAGGABLE: ChartKind[] = ["scatter", "bubble"];
 
+/** Whether a chart kind supports direct-manipulation (drag) value editing. */
+export function supportsDragEdit(kind: ChartKind): boolean {
+  return DRAGGABLE.includes(kind) || POINT_DRAGGABLE.includes(kind);
+}
+
 interface Slice {
   label: string;
   value: number;

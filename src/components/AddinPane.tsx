@@ -6,7 +6,7 @@ import PlottDataTab from "@/components/PlottDataTab";
 import ShapesPreview from "@/components/ShapesPreview";
 import StylePanel from "@/components/StylePanel";
 import { CHART_CATALOG, CHART_GROUP_LABELS, isChartKind } from "@/lib/charts/catalog";
-import ChartSVG from "@/lib/charts/ChartSVG";
+import ChartSVG, { supportsDragEdit } from "@/lib/charts/ChartSVG";
 import { sampleFor } from "@/lib/charts/sample";
 import { applyTreatment, SHAPE_TREATMENTS, treatmentOf } from "@/lib/charts/styles";
 import { embedPngMetadata, stampEntries } from "@/lib/export/stamp";
@@ -56,6 +56,29 @@ function AlignIcon({ align }: { align: "left" | "center" | "right" }) {
   );
 }
 
+/** Diagonal expand / collapse arrows. */
+function ExpandIcon({ collapse = false }: { collapse?: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      {collapse ? (
+        <>
+          <path d="M9 2v5h5" />
+          <path d="M14 2 9 7" />
+          <path d="M7 14V9H2" />
+          <path d="M2 14l5-5" />
+        </>
+      ) : (
+        <>
+          <path d="M10 2h4v4" />
+          <path d="M14 2l-5 5" />
+          <path d="M6 14H2v-4" />
+          <path d="M2 14l5-5" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 /**
  * The PowerPoint task-pane surface: design a chart, insert it on the current
  * slide, restyle a Plott chart already on a slide, or pull the data from a native
@@ -76,6 +99,7 @@ export default function AddinPane() {
   const [selection, setSelection] = useState<SelectionKind>("none");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>("");
+  const [expanded, setExpanded] = useState(false);
 
   const exportRef = useRef<SVGSVGElement>(null);
 
@@ -87,6 +111,7 @@ export default function AddinPane() {
   const activeGeo = effectiveGeo(spec);
   const isMarkerKind =
     spec.kind === "scatter" || spec.kind === "bubble" || spec.kind === "line" || spec.kind === "lineMulti";
+  const canDragEdit = supportsDragEdit(spec.kind);
   // When overlaying a matched native chart, render the export (and preview) at the
   // native chart's aspect so the inserted image/shapes cover it exactly, undistorted.
   const exportSize = overlayExportSize(nativeRect, EXPORT_W, EXPORT_H);
@@ -130,6 +155,16 @@ export default function AddinPane() {
     };
   }, [host]);
 
+  // Close the expanded editor on Escape.
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
+
   function setInsertMode(mode: "image" | "shapes") {
     setInsertAs(mode);
     // Shapes mode only offers shape-safe treatments; snap to one if needed.
@@ -143,6 +178,11 @@ export default function AddinPane() {
     setKind(next);
     setSpec(structuredClone(s.spec));
     setData(structuredClone(s.data));
+  }
+
+  /** Live value edit from dragging a bar/point in the preview (mirrors the web editor). */
+  function editValue(key: string, row: number, value: number) {
+    setData((d) => ({ ...d, rows: d.rows.map((r, i) => (i === row ? { ...r, [key]: value } : r)) }));
   }
 
   function resetToNew() {
@@ -293,6 +333,60 @@ export default function AddinPane() {
 
   return (
     <div className="mx-auto flex h-screen max-w-[460px] flex-col text-[13px]">
+      {/* Expanded editor: fills the whole task pane so the chart is large enough to
+          drag-edit (same value editing as the web app). Office doesn't expose an API
+          to widen the host pane, so we use all available space and the user can drag
+          the pane wider for more room. */}
+      {expanded && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-paper" role="dialog" aria-modal="true" aria-label="Chart editor">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="plott-serif truncate text-[16px] text-ink">{spec.title?.trim() || "Chart"}</span>
+              {canDragEdit && (
+                <span className="plott-mono shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-accent">
+                  Drag to edit
+                </span>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button type="button" onClick={onInsert} disabled={busy} className={PRIMARY_BTN}>
+                {restyling ? "Update on slide" : "Insert on slide"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                aria-label="Collapse editor"
+                className="flex items-center gap-1.5 rounded-md border border-border bg-panel px-3 py-2.5 font-medium text-ink hover:border-accent hover:text-accent"
+              >
+                <ExpandIcon collapse /> Done
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-1 items-center justify-center overflow-auto p-4">
+            <div
+              className={`w-full max-w-[1040px] overflow-hidden rounded-xl border border-border shadow-[0_12px_34px_-14px_rgba(0,0,0,0.3)] ${transparent ? "cf-checkerboard" : ""}`}
+              style={{ aspectRatio: `${exportSize.width} / ${exportSize.height}` }}
+            >
+              <ChartSVG
+                spec={spec}
+                data={data}
+                width={exportSize.width}
+                height={exportSize.height}
+                transparent={transparent}
+                showTitle
+                fluid
+                onEditValue={canDragEdit ? editValue : undefined}
+              />
+            </div>
+          </div>
+          <div className="shrink-0 border-t border-border px-4 py-2 text-center text-[12px] text-muted">
+            {canDragEdit
+              ? "Drag the bars or points to change values. Switch types, palette, and style in the pane — your edits carry through to the slide."
+              : "This chart type isn't drag-editable — set values in the Data tab. Collapse to keep styling."}
+          </div>
+        </div>
+      )}
+
       {/* Frozen: live preview + insert actions. Everything else scrolls under it. */}
       <div className="z-10 flex shrink-0 flex-col gap-2 border-b border-border bg-paper px-3 pb-2.5 pt-3 shadow-[0_6px_16px_-12px_rgba(0,0,0,0.4)]">
         {restyling && (
@@ -314,15 +408,26 @@ export default function AddinPane() {
           </div>
         )}
 
-        <div
-          className={`mx-auto w-full overflow-hidden rounded-lg border border-border ${transparent && effectiveInsertAs !== "shapes" ? "cf-checkerboard" : ""}`}
-          style={{ aspectRatio: `${exportSize.width} / ${exportSize.height}`, maxHeight: 196 }}
-        >
-          {effectiveInsertAs === "shapes" ? (
-            <ShapesPreview spec={spec} data={data} width={exportSize.width} height={exportSize.height} background />
-          ) : (
-            <ChartSVG spec={spec} data={data} width={PREVIEW_W} height={previewH} transparent={transparent} showTitle fluid />
-          )}
+        <div className="relative mx-auto w-full">
+          <div
+            className={`w-full overflow-hidden rounded-lg border border-border ${transparent && effectiveInsertAs !== "shapes" ? "cf-checkerboard" : ""}`}
+            style={{ aspectRatio: `${exportSize.width} / ${exportSize.height}`, maxHeight: 196 }}
+          >
+            {effectiveInsertAs === "shapes" ? (
+              <ShapesPreview spec={spec} data={data} width={exportSize.width} height={exportSize.height} background />
+            ) : (
+              <ChartSVG spec={spec} data={data} width={PREVIEW_W} height={previewH} transparent={transparent} showTitle fluid />
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            aria-label={canDragEdit ? "Expand chart to edit values" : "Expand chart preview"}
+            title={canDragEdit ? "Expand & drag to edit values" : "Expand preview"}
+            className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-md border border-border bg-paper/90 px-2 py-1 text-[11px] font-medium text-ink shadow-sm backdrop-blur hover:border-accent hover:text-accent"
+          >
+            <ExpandIcon /> {canDragEdit ? "Edit" : "Expand"}
+          </button>
         </div>
 
         {restyling ? (
