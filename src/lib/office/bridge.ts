@@ -23,6 +23,13 @@ export interface OfficeBridge {
   deleteSelected(): Promise<void>;
   /** Create native shapes for a chart, group them, and tag the group. */
   insertShapes(draws: ShapeDraw[], tags: Record<string, string>): Promise<void>;
+  /**
+   * Replace the editable-chart shapes previously applied for `prevId` (if any) with
+   * a fresh set, grouped and tagged with the chart identity. Used by "Edit chart"
+   * mode to apply live edits directly onto the chart's spot on the slide. When
+   * `prevId` is null it just inserts (the first apply after converting a native chart).
+   */
+  applyEditableChart(draws: ShapeDraw[], tags: Record<string, string>, prevId: string | null): Promise<void>;
   /** The whole presentation as `.pptx` bytes (to read a native chart's data). */
   getDocumentPptxBytes(): Promise<Uint8Array>;
   /** 0-based index of the currently active slide. */
@@ -52,6 +59,42 @@ function geoToPptx(geo: GeoShape): PowerPoint.GeometricShapeType {
     default:
       return G.rectangle;
   }
+}
+
+/** Create one native shape from a `ShapeDraw` on the given collection (no tags). */
+function drawShape(shapes: PowerPoint.ShapeCollection, d: ShapeDraw): PowerPoint.Shape {
+  if (d.kind === "line") {
+    // addLine's width/height are box dimensions, not end coords — draw the line as
+    // a thin (optionally rotated) rectangle so it's never malformed.
+    const lr = lineToRect(d.x1, d.y1, d.x2, d.y2, d.weight);
+    const shape = shapes.addGeometricShape(PowerPoint.GeometricShapeType.rectangle, { left: lr.left, top: lr.top, width: lr.width, height: lr.height });
+    shape.fill.setSolidColor(d.color);
+    shape.lineFormat.visible = false;
+    if (lr.rotation !== 0 && Office.context.requirements.isSetSupported("PowerPointApi", "1.10")) {
+      shape.rotation = lr.rotation;
+    }
+    return shape;
+  }
+  if (d.kind === "text") {
+    const shape = shapes.addTextBox(d.text, { left: d.left, top: d.top, width: d.width, height: d.height });
+    const font = shape.textFrame.textRange.font;
+    font.size = d.size;
+    font.color = d.color;
+    shape.textFrame.textRange.paragraphFormat.horizontalAlignment = d.align as PowerPoint.ParagraphHorizontalAlignment;
+    shape.fill.clear();
+    shape.lineFormat.visible = false;
+    return shape;
+  }
+  const geoKey: GeoShape = d.kind === "ellipse" ? "ellipse" : d.geo ?? "rectangle";
+  const shape = shapes.addGeometricShape(geoToPptx(geoKey), { left: d.left, top: d.top, width: d.width, height: d.height });
+  shape.fill.setSolidColor(d.fill);
+  if (d.line) {
+    shape.lineFormat.color = d.line.color;
+    shape.lineFormat.weight = d.line.weight;
+  } else {
+    shape.lineFormat.visible = false;
+  }
+  return shape;
 }
 
 /** Real bridge backed by Office.js / PowerPoint.run. */
@@ -126,46 +169,54 @@ export function powerPointBridge(): OfficeBridge {
       return PowerPoint.run(async (context) => {
         const slide = context.presentation.getSelectedSlides().getItemAt(0);
         const shapes = slide.shapes;
-        const created: PowerPoint.Shape[] = [];
-        for (const d of draws) {
-          let shape: PowerPoint.Shape;
-          if (d.kind === "line") {
-            // addLine's width/height are box dimensions, not end coords — draw the
-            // line as a thin (optionally rotated) rectangle so it's never malformed.
-            const lr = lineToRect(d.x1, d.y1, d.x2, d.y2, d.weight);
-            shape = shapes.addGeometricShape(PowerPoint.GeometricShapeType.rectangle, { left: lr.left, top: lr.top, width: lr.width, height: lr.height });
-            shape.fill.setSolidColor(d.color);
-            shape.lineFormat.visible = false;
-            if (lr.rotation !== 0 && Office.context.requirements.isSetSupported("PowerPointApi", "1.10")) {
-              shape.rotation = lr.rotation;
-            }
-          } else if (d.kind === "text") {
-            shape = shapes.addTextBox(d.text, { left: d.left, top: d.top, width: d.width, height: d.height });
-            const font = shape.textFrame.textRange.font;
-            font.size = d.size;
-            font.color = d.color;
-            shape.textFrame.textRange.paragraphFormat.horizontalAlignment = d.align as PowerPoint.ParagraphHorizontalAlignment;
-            shape.fill.clear();
-            shape.lineFormat.visible = false;
-          } else {
-            const geoKey: GeoShape = d.kind === "ellipse" ? "ellipse" : d.geo ?? "rectangle";
-            shape = shapes.addGeometricShape(geoToPptx(geoKey), { left: d.left, top: d.top, width: d.width, height: d.height });
-            shape.fill.setSolidColor(d.fill);
-            if (d.line) {
-              shape.lineFormat.color = d.line.color;
-              shape.lineFormat.weight = d.line.weight;
-            } else {
-              shape.lineFormat.visible = false;
-            }
-          }
+        const created: PowerPoint.Shape[] = draws.map((d) => {
+          const shape = drawShape(shapes, d);
           shape.tags.add("PLOTT_ROLE", d.role);
-          created.push(shape);
-        }
+          return shape;
+        });
         await context.sync();
         // Group the pieces into one selectable/movable chart and tag the group with
         // the chart identity (grouping is PowerPointApi 1.8). Where grouping isn't
         // supported the shapes are still inserted and editable, just ungrouped.
         if (created.length > 1 && Office.context.requirements.isSetSupported("PowerPointApi", "1.8")) {
+          const group = shapes.addGroup(created);
+          for (const [key, value] of Object.entries(tags)) group.tags.add(key, value);
+          await context.sync();
+        }
+      });
+    },
+
+    applyEditableChart(draws, tags, prevId) {
+      return PowerPoint.run(async (context) => {
+        const slide = context.presentation.getSelectedSlides().getItemAt(0);
+        const shapes = slide.shapes;
+        // 1) Remove the previously-applied shapes for this chart id. The group is
+        // tagged with PLOTT_ID (deleting it cascades to its children); the no-group
+        // fallback tags each child, so this finds either.
+        if (prevId) {
+          shapes.load("items");
+          await context.sync();
+          for (const sh of shapes.items) sh.tags.load("key,value");
+          await context.sync();
+          const doomed = shapes.items.filter((sh) =>
+            sh.tags.items.some((t) => t.key === "PLOTT_ID" && t.value === prevId),
+          );
+          for (const sh of doomed) sh.delete();
+          if (doomed.length) await context.sync();
+        }
+        // 2) Draw the fresh shapes.
+        const id = tags["PLOTT_ID"];
+        const grouping = draws.length > 1 && Office.context.requirements.isSetSupported("PowerPointApi", "1.8");
+        const created: PowerPoint.Shape[] = draws.map((d) => {
+          const shape = drawShape(shapes, d);
+          shape.tags.add("PLOTT_ROLE", d.role);
+          // When we can't group, tag each child with the id so a later apply can
+          // find and remove them; when grouped, the group carries the id.
+          if (id && !grouping) shape.tags.add("PLOTT_ID", id);
+          return shape;
+        });
+        await context.sync();
+        if (grouping) {
           const group = shapes.addGroup(created);
           for (const [key, value] of Object.entries(tags)) group.tags.add(key, value);
           await context.sync();

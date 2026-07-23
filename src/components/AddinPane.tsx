@@ -16,6 +16,7 @@ import { powerPointBridge } from "@/lib/office/bridge";
 import { overlayExportSize, type PointRect } from "@/lib/office/geometry";
 import { isOfficeHost, loadOfficeJs, officeReady, onSelectionChanged } from "@/lib/office/host";
 import {
+  applyEditableChart,
   classifySelection,
   insertChart,
   insertChartShapes,
@@ -100,6 +101,19 @@ export default function AddinPane() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [expanded, setExpanded] = useState(false);
+  // Two modes: "shapes" (design → insert image/shapes) and "edit" (edit a chart on
+  // the slide live). Toggle lives at the footer.
+  const [appMode, setAppMode] = useState<"shapes" | "edit">("shapes");
+  const [editTarget, setEditTarget] = useState<{ id: string; rect: PointRect } | null>(null);
+  const editDocRef = useRef<ChartDocument | null>(null);
+  const applyLock = useRef(false);
+  const applyPending = useRef(false);
+  const specRef = useRef(spec);
+  const dataRef = useRef(data);
+  useEffect(() => {
+    specRef.current = spec;
+    dataRef.current = data;
+  }, [spec, data]);
 
   const exportRef = useRef<SVGSVGElement>(null);
 
@@ -107,14 +121,19 @@ export default function AddinPane() {
   const restyling = !!restyleDoc;
   const canShapes = supportsShapes(spec.kind);
   const effectiveInsertAs = canShapes ? insertAs : "image";
+  const editing = appMode === "edit" && !!editTarget;
+  // In edit mode the on-slide result is always native shapes, so the style gallery
+  // shows the shape-safe looks + bar-shape picker (same as shapes insert mode).
+  const shapesLook = appMode === "edit" || effectiveInsertAs === "shapes";
   const shapeGeos = geoOptions(spec.kind);
   const activeGeo = effectiveGeo(spec);
   const isMarkerKind =
     spec.kind === "scatter" || spec.kind === "bubble" || spec.kind === "line" || spec.kind === "lineMulti";
   const canDragEdit = supportsDragEdit(spec.kind);
-  // When overlaying a matched native chart, render the export (and preview) at the
-  // native chart's aspect so the inserted image/shapes cover it exactly, undistorted.
-  const exportSize = overlayExportSize(nativeRect, EXPORT_W, EXPORT_H);
+  // When overlaying a matched native chart (or editing one), render at that chart's
+  // aspect so the image/shapes cover it exactly, undistorted.
+  const editRect = editTarget?.rect ?? nativeRect;
+  const exportSize = overlayExportSize(editRect, EXPORT_W, EXPORT_H);
   const previewH = Math.round((PREVIEW_W * exportSize.height) / exportSize.width);
 
   // Load Office.js on demand, then detect whether we're inside PowerPoint.
@@ -165,6 +184,129 @@ export default function AddinPane() {
     return () => window.removeEventListener("keydown", onKey);
   }, [expanded]);
 
+  /** Re-render the edited chart onto the slide (replacing its prior shapes). Guarded
+   *  so overlapping edits don't collide; a change during an apply re-runs after. */
+  async function runApply() {
+    const target = editTarget;
+    const doc = editDocRef.current;
+    if (!target || !doc || !isOfficeHost()) return;
+    if (applyLock.current) {
+      applyPending.current = true;
+      return;
+    }
+    applyLock.current = true;
+    try {
+      await applyEditableChart(powerPointBridge(), specRef.current, dataRef.current, {
+        stamp: stampFor(doc),
+        rect: target.rect,
+        prevId: target.id,
+      });
+    } catch (e) {
+      setStatus(errMsg(e));
+    } finally {
+      applyLock.current = false;
+      if (applyPending.current) {
+        applyPending.current = false;
+        void runApply();
+      }
+    }
+  }
+
+  // Live-apply edits to the on-slide chart (debounced) while editing in Mode 2.
+  useEffect(() => {
+    if (!editing || host !== "office") return;
+    const t = setTimeout(() => void runApply(), 450);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spec, data, editing, host]);
+
+  function switchMode(mode: "shapes" | "edit") {
+    setAppMode(mode);
+    setStatus("");
+    if (mode === "shapes") {
+      // Leave the edited chart on the slide; just stop live-editing it.
+      setEditTarget(null);
+      editDocRef.current = null;
+    } else {
+      // Entering edit mode always produces shapes; snap to a shape-safe treatment.
+      setSpec((s) => (SHAPE_TREATMENTS.includes(treatmentOf(s.style)) ? s : { ...s, style: applyTreatment(s.style, "studioFlat") }));
+    }
+  }
+
+  /** Convert the selected native chart into a live-editable Plott chart on the slide. */
+  async function onEditNativeChart() {
+    setBusy(true);
+    setStatus("");
+    try {
+      if (!isOfficeHost()) {
+        setStatus("Open in PowerPoint and select a chart on the slide.");
+        return;
+      }
+      const bridge = powerPointBridge();
+      const match = await matchSelectedChart(bridge);
+      if (!match) {
+        setStatus("Couldn't read that chart's data. If it's protected, remove the sensitivity label and retry.");
+        return;
+      }
+      if (!supportsShapes(match.spec.kind)) {
+        setStatus(`Live editing supports bar, line, scatter & bubble charts — “${match.spec.kind}” isn't supported yet.`);
+        return;
+      }
+      // Replace the native chart with editable shapes at its exact footprint.
+      await bridge.deleteSelected();
+      const doc = createDocument(match.spec, match.data, match.title);
+      editDocRef.current = doc;
+      await saveDocument(doc);
+      await applyEditableChart(bridge, match.spec, match.data, { stamp: stampFor(doc), rect: match.rect, prevId: null });
+      setKind(match.spec.kind);
+      setSpec(structuredClone(match.spec));
+      setData(structuredClone(match.data));
+      setEditTarget({ id: doc.id, rect: match.rect });
+      setStatus(`Editing “${match.title || "chart"}” on slide ${match.slideIndex + 1} — drag or edit values; changes apply live.`);
+    } catch (e) {
+      setStatus(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Resume live-editing an existing Plott chart already on the slide. */
+  async function onEditPlottChart() {
+    setBusy(true);
+    setStatus("");
+    try {
+      const bridge = powerPointBridge();
+      const sel = await bridge.readSelected();
+      const ref = sel ? await readSelectedChart(bridge) : null;
+      if (!sel || !ref) {
+        setStatus("Select a Plott chart on the slide to edit it.");
+        return;
+      }
+      const stored = await getDocument(ref.chartId);
+      if (!stored) {
+        setStatus("This chart's data isn't stored on this device, so it can't be re-edited here.");
+        return;
+      }
+      const v = getVersion(stored);
+      editDocRef.current = stored;
+      setKind(v.spec.kind);
+      setSpec(structuredClone(v.spec));
+      setData(structuredClone(v.data));
+      setEditTarget({ id: stored.id, rect: sel.geometry });
+      setStatus(`Editing ${stored.id} on the slide — changes apply live.`);
+    } catch (e) {
+      setStatus(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function stopEditing() {
+    setEditTarget(null);
+    editDocRef.current = null;
+    setStatus("Stopped editing. The chart stays on the slide.");
+  }
+
   function setInsertMode(mode: "image" | "shapes") {
     setInsertAs(mode);
     // Shapes mode only offers shape-safe treatments; snap to one if needed.
@@ -174,6 +316,13 @@ export default function AddinPane() {
   }
 
   function chooseKind(next: ChartKind) {
+    if (editing) {
+      // Keep the edited data; just switch how it's drawn (encoding carries over for
+      // the shape-safe kinds offered in edit mode).
+      setKind(next);
+      setSpec((sp) => ({ ...sp, kind: next }));
+      return;
+    }
     const s = sampleFor(next);
     setKind(next);
     setSpec(structuredClone(s.spec));
@@ -349,9 +498,16 @@ export default function AddinPane() {
               )}
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <button type="button" onClick={onInsert} disabled={busy} className={PRIMARY_BTN}>
-                {restyling ? "Update on slide" : "Insert on slide"}
-              </button>
+              {!editing && (
+                <button type="button" onClick={onInsert} disabled={busy} className={PRIMARY_BTN}>
+                  {restyling ? "Update on slide" : "Insert on slide"}
+                </button>
+              )}
+              {editing && (
+                <span className="plott-mono rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] uppercase tracking-wide text-emerald-700">
+                  Applied live
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setExpanded(false)}
@@ -392,9 +548,9 @@ export default function AddinPane() {
         </div>
       )}
 
-      {/* Frozen: live preview + insert actions. Everything else scrolls under it. */}
+      {/* Frozen: live preview / editor + actions. Everything else scrolls under it. */}
       <div className="z-10 flex shrink-0 flex-col gap-2 border-b border-border bg-paper px-3 pb-2.5 pt-3 shadow-[0_6px_16px_-12px_rgba(0,0,0,0.4)]">
-        {restyling && (
+        {appMode === "shapes" && restyling && (
           <div className="flex items-center justify-between rounded-md border border-accent/40 bg-accent/5 px-3 py-1.5">
             <span className="text-muted">
               Restyling <span className="font-semibold text-ink">{restyleDoc!.id}</span>
@@ -404,7 +560,7 @@ export default function AddinPane() {
             </button>
           </div>
         )}
-        {nativeRect && !restyling && (
+        {appMode === "shapes" && nativeRect && !restyling && (
           <div className="flex items-center justify-between rounded-md border border-accent/40 bg-accent/5 px-3 py-1.5">
             <span className="text-muted">Will overlay on the selected chart</span>
             <button type="button" onClick={resetToNew} className="text-[12px] font-medium text-accent hover:underline">
@@ -412,53 +568,91 @@ export default function AddinPane() {
             </button>
           </div>
         )}
-
-        <div className="relative mx-auto w-full">
-          <div
-            className={`w-full overflow-hidden rounded-lg border border-border ${transparent && effectiveInsertAs !== "shapes" ? "cf-checkerboard" : ""}`}
-            style={{ aspectRatio: `${exportSize.width} / ${exportSize.height}`, maxHeight: 196 }}
-          >
-            {effectiveInsertAs === "shapes" ? (
-              <ShapesPreview spec={spec} data={data} width={exportSize.width} height={exportSize.height} background />
-            ) : (
-              <ChartSVG spec={spec} data={data} width={PREVIEW_W} height={previewH} transparent={transparent} showTitle fluid />
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            aria-label={canDragEdit ? "Expand chart to edit values" : "Expand chart preview"}
-            title={canDragEdit ? "Expand & drag to edit values" : "Expand preview"}
-            className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-md border border-border bg-paper/90 px-2 py-1 text-[11px] font-medium text-ink shadow-sm backdrop-blur hover:border-accent hover:text-accent"
-          >
-            <ExpandIcon /> {canDragEdit ? "Edit" : "Expand"}
-          </button>
-        </div>
-
-        {restyling ? (
-          <div className="flex gap-2">
-            <button type="button" onClick={onUpdate} disabled={busy} className={`flex-1 ${PRIMARY_BTN}`}>
-              Update on slide
-            </button>
-            <button type="button" onClick={onInsert} disabled={busy} className={SECONDARY_BTN}>
-              Insert as new
+        {editing && (
+          <div className="flex items-center justify-between rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-1.5">
+            <span className="text-muted">
+              Editing on the slide — <span className="font-medium text-ink">changes apply live</span>
+            </span>
+            <button type="button" onClick={stopEditing} className="text-[12px] font-medium text-accent hover:underline">
+              Stop editing
             </button>
           </div>
-        ) : (
-          <button type="button" onClick={onInsert} disabled={busy} className={PRIMARY_BTN}>
-            Insert on slide
-          </button>
         )}
-        {selection === "plott" && !restyling && (
+
+        {(appMode === "shapes" || editing) && (
+          <div className="relative mx-auto w-full">
+            <div
+              className={`w-full overflow-hidden rounded-lg border border-border ${transparent && !shapesLook ? "cf-checkerboard" : ""}`}
+              style={{ aspectRatio: `${exportSize.width} / ${exportSize.height}`, maxHeight: 196 }}
+            >
+              {editing ? (
+                <ChartSVG spec={spec} data={data} width={exportSize.width} height={exportSize.height} showTitle fluid onEditValue={canDragEdit ? editValue : undefined} />
+              ) : effectiveInsertAs === "shapes" ? (
+                <ShapesPreview spec={spec} data={data} width={exportSize.width} height={exportSize.height} background />
+              ) : (
+                <ChartSVG spec={spec} data={data} width={PREVIEW_W} height={previewH} transparent={transparent} showTitle fluid />
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              aria-label={canDragEdit ? "Expand chart to edit values" : "Expand chart preview"}
+              title={canDragEdit ? "Expand & drag to edit values" : "Expand preview"}
+              className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-md border border-border bg-paper/90 px-2 py-1 text-[11px] font-medium text-ink shadow-sm backdrop-blur hover:border-accent hover:text-accent"
+            >
+              <ExpandIcon /> {canDragEdit ? "Edit" : "Expand"}
+            </button>
+          </div>
+        )}
+
+        {appMode === "shapes" &&
+          (restyling ? (
+            <div className="flex gap-2">
+              <button type="button" onClick={onUpdate} disabled={busy} className={`flex-1 ${PRIMARY_BTN}`}>
+                Update on slide
+              </button>
+              <button type="button" onClick={onInsert} disabled={busy} className={SECONDARY_BTN}>
+                Insert as new
+              </button>
+            </div>
+          ) : (
+            <button type="button" onClick={onInsert} disabled={busy} className={PRIMARY_BTN}>
+              Insert on slide
+            </button>
+          ))}
+        {appMode === "shapes" && selection === "plott" && !restyling && (
           <button type="button" onClick={onRestyleSelected} disabled={busy} className={SECONDARY_BTN}>
             Restyle selected chart
           </button>
         )}
-        {selection === "native" && (
+        {appMode === "shapes" && selection === "native" && (
           <button type="button" onClick={onMatchSelected} disabled={busy} className={SECONDARY_BTN}>
             Style Excel Chart
           </button>
         )}
+
+        {appMode === "edit" && !editing && (
+          <div className="rounded-md border border-border bg-panel p-3 text-center">
+            {selection === "native" ? (
+              <>
+                <p className="mb-2 text-[12px] text-muted">Edit the selected chart&apos;s data &amp; style directly on the slide.</p>
+                <button type="button" onClick={onEditNativeChart} disabled={busy} className={`w-full ${PRIMARY_BTN}`}>
+                  Edit this chart
+                </button>
+              </>
+            ) : selection === "plott" ? (
+              <>
+                <p className="mb-2 text-[12px] text-muted">Continue editing the selected Plott chart on the slide.</p>
+                <button type="button" onClick={onEditPlottChart} disabled={busy} className={`w-full ${PRIMARY_BTN}`}>
+                  Edit this chart
+                </button>
+              </>
+            ) : (
+              <p className="text-[12px] text-muted">Select a chart on the slide to edit it live here.</p>
+            )}
+          </div>
+        )}
+
         {status && <p data-status className="text-[12px] text-muted">{status}</p>}
       </div>
 
@@ -471,15 +665,21 @@ export default function AddinPane() {
             onChange={(e) => isChartKind(e.target.value) && chooseKind(e.target.value)}
             className="rounded-md border border-border bg-panel px-3 py-2 text-ink outline-none focus:border-accent"
           >
-            {Object.entries(CHART_GROUP_LABELS).map(([group, label]) => (
-              <optgroup key={group} label={label}>
-                {CHART_CATALOG.filter((c) => c.group === group).map((c) => (
-                  <option key={c.kind} value={c.kind}>
-                    {c.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
+            {Object.entries(CHART_GROUP_LABELS).map(([group, label]) => {
+              // In edit mode the result is native shapes, so only offer kinds we can
+              // draw as shapes (bar/line/scatter families).
+              const kinds = CHART_CATALOG.filter((c) => c.group === group && (appMode !== "edit" || supportsShapes(c.kind)));
+              if (kinds.length === 0) return null;
+              return (
+                <optgroup key={group} label={label}>
+                  {kinds.map((c) => (
+                    <option key={c.kind} value={c.kind}>
+                      {c.label}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </select>
         </label>
 
@@ -550,47 +750,51 @@ export default function AddinPane() {
             kind={spec.kind}
             style={spec.style}
             onChange={(style) => setSpec((s) => ({ ...s, style }))}
-            treatments={effectiveInsertAs === "shapes" ? SHAPE_TREATMENTS : undefined}
+            treatments={shapesLook ? SHAPE_TREATMENTS : undefined}
             renderSwatch={
-              effectiveInsertAs === "shapes"
+              shapesLook
                 ? (swatchSpec, swatchData) => <ShapesPreview spec={swatchSpec} data={swatchData} width={320} height={200} compact />
                 : undefined
             }
             beforeTreatments={
               <div className="mb-[18px] flex flex-col gap-2.5 border-b border-rule pb-4">
-                <label className="flex items-center gap-2 text-muted">
-                  <input
-                    type="checkbox"
-                    checked={transparent}
-                    onChange={(e) => setSpec((s) => ({ ...s, style: { ...s.style, transparentBackground: e.target.checked } }))}
-                  />
-                  Transparent background (for slides)
-                </label>
-                <div className="flex items-center gap-2 text-[12px]">
-                  <span className="text-muted">Render as</span>
-                  <div className="inline-flex overflow-hidden rounded-md border border-border">
-                    {(["image", "shapes"] as const).map((m) => {
-                      const disabled = m === "shapes" && !canShapes;
-                      const active = effectiveInsertAs === m;
-                      return (
-                        <button
-                          key={m}
-                          type="button"
-                          disabled={disabled}
-                          title={disabled ? "This chart type needs curves PowerPoint can't draw as shapes — use an image." : undefined}
-                          onClick={() => setInsertMode(m)}
-                          className={`px-3 py-1.5 ${active ? "bg-accent text-white" : "bg-panel text-ink"} ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
-                        >
-                          {m === "image" ? "Image" : "Editable shapes"}
-                        </button>
-                      );
-                    })}
+                {appMode !== "edit" && (
+                  <label className="flex items-center gap-2 text-muted">
+                    <input
+                      type="checkbox"
+                      checked={transparent}
+                      onChange={(e) => setSpec((s) => ({ ...s, style: { ...s.style, transparentBackground: e.target.checked } }))}
+                    />
+                    Transparent background (for slides)
+                  </label>
+                )}
+                {appMode !== "edit" && (
+                  <div className="flex items-center gap-2 text-[12px]">
+                    <span className="text-muted">Render as</span>
+                    <div className="inline-flex overflow-hidden rounded-md border border-border">
+                      {(["image", "shapes"] as const).map((m) => {
+                        const disabled = m === "shapes" && !canShapes;
+                        const active = effectiveInsertAs === m;
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            disabled={disabled}
+                            title={disabled ? "This chart type needs curves PowerPoint can't draw as shapes — use an image." : undefined}
+                            onClick={() => setInsertMode(m)}
+                            className={`px-3 py-1.5 ${active ? "bg-accent text-white" : "bg-panel text-ink"} ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
+                          >
+                            {m === "image" ? "Image" : "Editable shapes"}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-                {effectiveInsertAs === "shapes" && (
+                )}
+                {shapesLook && (
                   <p className="text-[11px] text-muted">Native PowerPoint shapes — solid fills, outlines &amp; preset geometry (no gradients/shadows — those are image-only).</p>
                 )}
-                {effectiveInsertAs === "shapes" && shapeGeos.length > 1 && (
+                {shapesLook && shapeGeos.length > 1 && (
                   <div className="flex flex-col gap-1.5">
                     <span className="plott-mono text-[10px] uppercase tracking-[0.12em] text-faint">{isMarkerKind ? "Marker" : "Bar shape"}</span>
                     <div className="grid grid-cols-3 gap-2">
@@ -619,6 +823,24 @@ export default function AddinPane() {
             }
           />
         )}
+      </div>
+
+      {/* Footer: mode toggle. Mode 1 = design & insert (image/shapes); Mode 2 = edit
+          a chart on the slide live. */}
+      <div className="z-10 shrink-0 border-t border-border bg-paper px-3 py-2">
+        <div className="inline-flex w-full overflow-hidden rounded-md border border-border text-[12px] font-medium">
+          {(["shapes", "edit"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => switchMode(m)}
+              aria-pressed={appMode === m}
+              className={`flex-1 px-3 py-2 ${appMode === m ? "bg-accent text-white" : "bg-panel text-ink hover:text-accent"}`}
+            >
+              {m === "shapes" ? "Images & shapes" : "Edit chart on slide"}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Offscreen, export-fidelity render used to rasterize the PNG placed on the slide. */}

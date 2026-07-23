@@ -60,22 +60,43 @@ const OFFICE_MOCK = `
     onReady(cb){ cb({ host: 'PowerPoint' }); },
   };
   Office.FileType = { Compressed: 'compressed' };
-  // native-shape insertion model
+  // native-shape insertion model. topShapes models the slide's top-level shapes so
+  // applyEditableChart can enumerate + delete by tag; window.__shapes stays a flat
+  // list of drawn primitives (for the Mode-1 checks) and window.__group the last group.
   window.__shapes = [];
   window.__group = null;
-  function makeChild(rec) {
-    const tagsMap = {};
+  window.__applyCount = 0;
+  let topShapes = [];
+  function shapeProxy(rec) {
     return {
       fill: { setSolidColor(){}, clear(){} },
-      lineFormat: {}, textFrame: { textRange: { font: {}, paragraphFormat: {} } },
-      tags: { add(k, v){ tagsMap[k] = v; if (rec) rec.tags = tagsMap; } },
+      lineFormat: {}, textFrame: { textRange: { font: {}, paragraphFormat: {} } }, rotation: 0,
+      tags: {
+        add(k, v){ rec.tags[k] = v; },
+        load(){},
+        get items(){ return Object.keys(rec.tags).map((k) => ({ key: k, value: rec.tags[k] })); },
+      },
+      delete(){
+        rec.deleted = true;
+        topShapes = topShapes.filter((s) => s !== rec);
+        for (const m of rec.members || []) { m.deleted = true; }
+      },
     };
   }
   const shapesApi = {
-    addGeometricShape(geo, opts){ const rec = { type: geo === 'Ellipse' ? 'ellipse' : 'rect', geo, opts }; window.__shapes.push(rec); return makeChild(rec); },
-    addLine(type, opts){ const rec = { type: 'line', opts }; window.__shapes.push(rec); return makeChild(rec); },
-    addTextBox(text, opts){ const rec = { type: 'text', text, opts }; window.__shapes.push(rec); return makeChild(rec); },
-    addGroup(arr){ const g = {}; window.__group = {}; return { tags: { add(k, v){ window.__group[k] = v; } } }; },
+    addGeometricShape(geo, opts){ const rec = { type: geo === 'Ellipse' ? 'ellipse' : 'rect', geo, opts, tags: {} }; window.__shapes.push(rec); topShapes.push(rec); return shapeProxy(rec); },
+    addLine(type, opts){ const rec = { type: 'line', opts, tags: {} }; window.__shapes.push(rec); topShapes.push(rec); return shapeProxy(rec); },
+    addTextBox(text, opts){ const rec = { type: 'text', text, opts, tags: {} }; window.__shapes.push(rec); topShapes.push(rec); return shapeProxy(rec); },
+    addGroup(arr){
+      const members = topShapes.slice();
+      const rec = { type: 'group', tags: {}, members };
+      topShapes = [rec];
+      window.__group = rec.tags;
+      window.__applyCount++;
+      return shapeProxy(rec);
+    },
+    load(){},
+    get items(){ return topShapes.filter((s) => !s.deleted).map(shapeProxy); },
   };
   window.PowerPoint = {
     GeometricShapeType: { rectangle: 'Rectangle', roundRectangle: 'RoundRectangle', round2SameRectangle: 'Round2SameRectangle', snip2SameRectangle: 'Snip2SameRectangle', can: 'Can', bevel: 'Bevel', ellipse: 'Ellipse', diamond: 'Diamond', triangle: 'Triangle' },
@@ -279,6 +300,50 @@ const shapeCover = await page.evaluate((n) => {
 }, NATIVE);
 check("shapes overlay includes a full-footprint background cover", shapeCover.hasBackground);
 check("all overlay shapes sit within the native chart footprint", shapeCover.allInside);
+
+// ---- 6) Mode 2: "Edit chart on slide" — convert a native chart + live-edit it ----
+// Switch back to a fresh state first.
+await page.getByRole("button", { name: "Images & shapes" }).click();
+await page.waitForTimeout(150);
+// Enter edit mode; with nothing selected it should prompt to pick a chart.
+await page.getByRole("button", { name: "Edit chart on slide" }).click();
+await page.evaluate(() => { window.__model.selected = null; if (window.__fireSelection) window.__fireSelection(); });
+await page.waitForTimeout(1500); // let the selection poller (1.2s) clear the stale selection
+check("edit mode hides the Insert button", (await page.getByRole("button", { name: "Insert on slide" }).count()) === 0);
+check("edit mode prompts to select a chart", (await page.getByText(/Select a chart on the slide/).count()) === 1);
+// Select a native chart -> "Edit this chart" appears.
+await page.evaluate(() => window.__selectNative());
+const editThis = page.getByRole("button", { name: "Edit this chart" });
+await editThis.waitFor({ state: "visible", timeout: 8000 });
+check("edit mode offers Edit this chart for a native selection", true);
+// Convert: reads data, replaces native chart with tagged shapes, starts live editing.
+await page.evaluate(() => { window.__shapes = []; window.__applyCount = 0; });
+await editThis.click();
+await page.waitForFunction(() => /apply live/i.test(document.querySelector("p[data-status]")?.textContent || ""), null, { timeout: 8000 });
+const editState = await page.evaluate(() => ({
+  group: window.__group,
+  shapes: window.__shapes.length,
+  applies: window.__applyCount,
+  hasInsert: !![...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Insert on slide"),
+}));
+check("converting applies tagged shapes to the slide", editState.shapes > 0 && /^PLT-/.test(editState.group?.PLOTT_ID || ""), `n=${editState.shapes} id=${editState.group?.PLOTT_ID}`);
+check("edit mode shows no Insert button while editing", editState.hasInsert === false);
+check("editing shows the live-apply banner", (await page.getByText(/changes apply live/).count()) >= 1);
+// Edit a value in the table -> auto-apply re-renders on the slide.
+await page.getByRole("button", { name: "data", exact: true }).click();
+await page.waitForTimeout(150);
+const appliesBefore = await page.evaluate(() => window.__applyCount);
+const valueInput = page.locator('input[type="number"]').first();
+if (await valueInput.count()) {
+  await valueInput.fill("275");
+  await page.waitForTimeout(750); // debounced auto-apply (450ms) + margin
+}
+const appliesAfter = await page.evaluate(() => window.__applyCount);
+check("editing a value auto-applies to the slide", appliesAfter > appliesBefore, `${appliesBefore} -> ${appliesAfter}`);
+// Back to Mode 1 -> Insert returns, editing stops.
+await page.getByRole("button", { name: "Images & shapes" }).click();
+await page.waitForTimeout(150);
+check("switching back to Images & shapes restores Insert", (await page.getByRole("button", { name: "Insert on slide" }).count()) === 1);
 
 check("no page errors", errors.length === 0, errors[0] ?? "");
 const passed = results.filter(Boolean).length;

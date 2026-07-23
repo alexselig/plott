@@ -44,6 +44,7 @@ function bridgeFor(slideIndex: number, geo?: PointRect): OfficeBridge {
     styleSelected: async () => {},
     deleteSelected: async () => {},
     insertShapes: async () => {},
+    applyEditableChart: async () => {},
     getDocumentPptxBytes: async () => new Uint8Array([1, 2, 3]),
     getSelectedSlideIndex: async () => slideIndex,
   };

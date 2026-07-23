@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { OfficeBridge } from "@/lib/office/bridge";
 import type { PointRect } from "@/lib/office/geometry";
-import { classifySelection, insertChart, insertChartShapes, readSelectedChart, replaceSelectedChart } from "@/lib/office/insert";
+import { applyEditableChart, classifySelection, insertChart, insertChartShapes, readSelectedChart, replaceSelectedChart } from "@/lib/office/insert";
 import type { ShapeDraw } from "@/lib/office/shapes";
 import { stampToTags, TAG_ID, TAG_VERSION } from "@/lib/office/tags";
 import { sampleFor } from "@/lib/charts/sample";
@@ -52,6 +52,11 @@ class FakeBridge implements OfficeBridge {
 
   async insertShapes(draws: ShapeDraw[], tags: Record<string, string>): Promise<void> {
     this.shapeGroups.push({ draws, tags });
+  }
+
+  applied: { draws: ShapeDraw[]; tags: Record<string, string>; prevId: string | null }[] = [];
+  async applyEditableChart(draws: ShapeDraw[], tags: Record<string, string>, prevId: string | null): Promise<void> {
+    this.applied.push({ draws, tags, prevId });
   }
 
   async getDocumentPptxBytes(): Promise<Uint8Array> {
@@ -196,5 +201,40 @@ describe("insertChartShapes", () => {
         expect(d.left + d.width).toBeLessThanOrEqual(rect.left + rect.width + 0.5);
       }
     }
+  });
+});
+
+describe("applyEditableChart", () => {
+  const rect = { left: 100, top: 50, width: 400, height: 220 };
+
+  it("renders shapes at the target rect and replaces the prior chart id", async () => {
+    const bridge = new FakeBridge();
+    const { spec, data } = sampleFor("bar");
+    const ok = await applyEditableChart(bridge, spec, data, { stamp, rect, prevId: "PLT-OLD" });
+    expect(ok).toBe(true);
+    expect(bridge.applied).toHaveLength(1);
+    const call = bridge.applied[0];
+    expect(call.prevId).toBe("PLT-OLD");
+    expect(call.tags[TAG_ID]).toBe("PLT-7Q2F");
+    // Draws include the opaque background cover and sit within the target rect.
+    expect(call.draws[0].role).toBe("background");
+    for (const d of call.draws) {
+      if (d.kind === "line") continue;
+      expect(d.left).toBeGreaterThanOrEqual(rect.left - 0.5);
+    }
+  });
+
+  it("passes prevId null for the first apply", async () => {
+    const bridge = new FakeBridge();
+    const { spec, data } = sampleFor("line");
+    await applyEditableChart(bridge, spec, data, { stamp, rect, prevId: null });
+    expect(bridge.applied[0].prevId).toBeNull();
+  });
+
+  it("returns false for a freeform-only kind (no apply)", async () => {
+    const bridge = new FakeBridge();
+    const { spec, data } = sampleFor("pie");
+    expect(await applyEditableChart(bridge, spec, data, { stamp, rect, prevId: null })).toBe(false);
+    expect(bridge.applied).toHaveLength(0);
   });
 });

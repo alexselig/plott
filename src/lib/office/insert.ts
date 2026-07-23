@@ -54,6 +54,24 @@ export async function insertChartShapes(
   return true;
 }
 
+/**
+ * Apply a live edit to an "Edit chart" (Mode 2) target: render the chart as native
+ * shapes at `rect` and replace the previously-applied shapes for `prevId` in place.
+ * Returns false for kinds that can't be drawn as shapes (caller should message).
+ */
+export async function applyEditableChart(
+  bridge: OfficeBridge,
+  spec: ChartSpec,
+  data: DataTable,
+  { stamp, rect, prevId }: { stamp: ExportStamp; rect: PointRect; prevId: string | null },
+): Promise<boolean> {
+  if (!supportsShapes(spec.kind)) return false;
+  const draws = chartToShapes(spec, data, rect, false, true);
+  if (draws.length === 0) return false;
+  await bridge.applyEditableChart(draws, stampToTags(stamp), prevId);
+  return true;
+}
+
 /** The chart reference of the currently selected shape, or null if it isn't ours. */
 export async function readSelectedChart(bridge: OfficeBridge): Promise<StampRef | null> {
   const sel = await bridge.readSelected();

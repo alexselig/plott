@@ -6,6 +6,10 @@ direct-manipulation editing); only the slide interaction is new.
 
 What it does:
 
+Two modes, toggled at the footer of the pane:
+
+**Mode 1 — Images & shapes** (design → insert):
+
 - **Insert a chart** onto the current slide — as a styled **image**, or as **native
   editable shapes** (grouped geometry + text boxes) that the user can move/recolor/retype.
   Bars can be inserted with a chosen **geometry** — flat, rounded, rounded-top
@@ -18,13 +22,28 @@ What it does:
   what gets inserted); the image path keeps the full treatment styling (gradients/shadows).
 - **Restyle a Plott chart** already on a slide — select it, tweak, update in place.
 - **Expand & live-edit** — a button on the preview opens a full-pane editor where you
-  drag bars/columns and scatter/bubble points to change their values directly (the same
-  direct-manipulation editing as the web app), then insert/update. Office has no API to
-  widen the host task pane, so the editor uses all available pane space (drag the pane
-  wider for more room).
-- **Match a native chart** — select a native PowerPoint chart, pull its data (via
-  `getFileAsync` + Plott's PPTX parser), match the Plott chart's background to the
-  slide's background color, then drop a styled image on top of it.
+  drag bars/columns and scatter/bubble points to change their values directly (a live
+  value floats above the mark while dragging), with the values table alongside. Office
+  has no API to widen the host task pane, so the editor uses all available pane space.
+- **Style an Excel chart** — select a native PowerPoint chart, pull its data (via
+  `getFileAsync` + Plott's PPTX parser), match the background to the slide, then drop a
+  styled image/shapes on top of it (sized to cover the native chart exactly).
+
+**Mode 2 — Edit chart on slide** (edit in place):
+
+- Select a native (or previously-converted Plott) chart and **edit it live on the slide** —
+  drag values, edit the table, change type/palette/style — with **no preview or insert
+  buttons**; every change auto-applies to that chart's spot on the slide.
+- Because PowerPoint's API can't edit a native chart's data (no chart object model, no
+  file write-back — see below), the selected chart is **converted to Plott-owned native
+  shapes** at the same footprint on first edit, then re-rendered in place on each change
+  (`bridge.applyEditableChart` deletes the prior shapes by tag and redraws). It stays
+  re-editable via its `PLOTT_ID` tag.
+
+> **Platform limit:** the Office.js PowerPoint API exposes no chart data/series and no
+> OOXML/file write-back (`Ooxml` coercion is Word-only), so a native Office chart can't be
+> edited in place — hence the overlay/replace approach in both modes.
+
 
 ## How the link survives copy/paste
 
