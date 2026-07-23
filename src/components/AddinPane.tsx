@@ -262,7 +262,8 @@ export default function AddinPane() {
       setSpec(structuredClone(match.spec));
       setData(structuredClone(match.data));
       setEditTarget({ id: doc.id, rect: match.rect });
-      setStatus(`Editing “${match.title || "chart"}” on slide ${match.slideIndex + 1} — drag or edit values; changes apply live.`);
+      setTab("data");
+      setStatus(`Editing “${match.title || "chart"}” on slide ${match.slideIndex + 1} — edit values below, then Edit visually to drag. Changes apply live.`);
     } catch (e) {
       setStatus(errMsg(e));
     } finally {
@@ -293,6 +294,7 @@ export default function AddinPane() {
       setSpec(structuredClone(v.spec));
       setData(structuredClone(v.data));
       setEditTarget({ id: stored.id, rect: sel.geometry });
+      setTab("data");
       setStatus(`Editing ${stored.id} on the slide — changes apply live.`);
     } catch (e) {
       setStatus(errMsg(e));
@@ -568,26 +570,14 @@ export default function AddinPane() {
             </button>
           </div>
         )}
-        {editing && (
-          <div className="flex items-center justify-between rounded-md border border-emerald-500/40 bg-emerald-500/5 px-3 py-1.5">
-            <span className="text-muted">
-              Editing on the slide — <span className="font-medium text-ink">changes apply live</span>
-            </span>
-            <button type="button" onClick={stopEditing} className="text-[12px] font-medium text-accent hover:underline">
-              Stop editing
-            </button>
-          </div>
-        )}
 
-        {(appMode === "shapes" || editing) && (
+        {appMode === "shapes" && (
           <div className="relative mx-auto w-full">
             <div
               className={`w-full overflow-hidden rounded-lg border border-border ${transparent && !shapesLook ? "cf-checkerboard" : ""}`}
               style={{ aspectRatio: `${exportSize.width} / ${exportSize.height}`, maxHeight: 196 }}
             >
-              {editing ? (
-                <ChartSVG spec={spec} data={data} width={exportSize.width} height={exportSize.height} showTitle fluid onEditValue={canDragEdit ? editValue : undefined} />
-              ) : effectiveInsertAs === "shapes" ? (
+              {effectiveInsertAs === "shapes" ? (
                 <ShapesPreview spec={spec} data={data} width={exportSize.width} height={exportSize.height} background />
               ) : (
                 <ChartSVG spec={spec} data={data} width={PREVIEW_W} height={previewH} transparent={transparent} showTitle fluid />
@@ -656,8 +646,10 @@ export default function AddinPane() {
         {status && <p data-status className="text-[12px] text-muted">{status}</p>}
       </div>
 
-      {/* Scrollable: chart type, title, and the data / style controls. */}
+      {/* Scrollable: (type/title only in shapes mode) + data/style controls, then the mode toggle. */}
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-3 py-3">
+        {appMode !== "edit" && (
+        <>
         <label className="flex flex-col gap-1">
           <span className="text-[11px] uppercase tracking-wide text-muted">Chart type</span>
           <select
@@ -666,9 +658,7 @@ export default function AddinPane() {
             className="rounded-md border border-border bg-panel px-3 py-2 text-ink outline-none focus:border-accent"
           >
             {Object.entries(CHART_GROUP_LABELS).map(([group, label]) => {
-              // In edit mode the result is native shapes, so only offer kinds we can
-              // draw as shapes (bar/line/scatter families).
-              const kinds = CHART_CATALOG.filter((c) => c.group === group && (appMode !== "edit" || supportsShapes(c.kind)));
+              const kinds = CHART_CATALOG.filter((c) => c.group === group);
               if (kinds.length === 0) return null;
               return (
                 <optgroup key={group} label={label}>
@@ -727,7 +717,11 @@ export default function AddinPane() {
             </div>
           </div>
         </label>
+        </>
+        )}
 
+        {(appMode === "shapes" || editing) && (
+          <>
         <div className="flex gap-1 border-b border-border">
           {(["data", "style"] as const).map((t) => (
             <button
@@ -823,23 +817,40 @@ export default function AddinPane() {
             }
           />
         )}
-      </div>
+          </>
+        )}
 
-      {/* Footer: mode toggle. Mode 1 = design & insert (image/shapes); Mode 2 = edit
-          a chart on the slide live. */}
-      <div className="z-10 shrink-0 border-t border-border bg-paper px-3 py-2">
-        <div className="inline-flex w-full overflow-hidden rounded-md border border-border text-[12px] font-medium">
-          {(["shapes", "edit"] as const).map((m) => (
+        {editing && (
+          <div className="flex flex-col gap-2 border-t border-rule pt-3">
             <button
-              key={m}
               type="button"
-              onClick={() => switchMode(m)}
-              aria-pressed={appMode === m}
-              className={`flex-1 px-3 py-2 ${appMode === m ? "bg-accent text-white" : "bg-panel text-ink hover:text-accent"}`}
+              onClick={() => setExpanded(true)}
+              className={`flex items-center justify-center gap-1.5 ${PRIMARY_BTN}`}
             >
-              {m === "shapes" ? "Images & shapes" : "Edit chart on slide"}
+              <ExpandIcon /> Edit visually
             </button>
-          ))}
+            <button type="button" onClick={stopEditing} className="text-center text-[12px] font-medium text-accent hover:underline">
+              Stop editing this chart
+            </button>
+          </div>
+        )}
+
+        {/* Mode toggle — sits at the bottom of the scroll content (not locked to the screen). */}
+        <div className="mt-1 border-t border-border pt-3">
+          <div className="plott-mono mb-1.5 text-[10px] uppercase tracking-[0.12em] text-faint">Mode</div>
+          <div className="inline-flex w-full overflow-hidden rounded-md border border-border text-[12px] font-medium">
+            {(["shapes", "edit"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => switchMode(m)}
+                aria-pressed={appMode === m}
+                className={`flex-1 px-3 py-2 ${appMode === m ? "bg-accent text-white" : "bg-panel text-ink hover:text-accent"}`}
+              >
+                {m === "shapes" ? "Images & shapes" : "Edit chart on slide"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

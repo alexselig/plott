@@ -328,7 +328,10 @@ const editState = await page.evaluate(() => ({
 }));
 check("converting applies tagged shapes to the slide", editState.shapes > 0 && /^PLT-/.test(editState.group?.PLOTT_ID || ""), `n=${editState.shapes} id=${editState.group?.PLOTT_ID}`);
 check("edit mode shows no Insert button while editing", editState.hasInsert === false);
-check("editing shows the live-apply banner", (await page.getByText(/changes apply live/).count()) >= 1);
+// New Mode-2 layout: no chart type/title, no green banner, an Edit visually button.
+check("edit mode hides chart type + title settings", (await page.getByText("Chart type").count()) === 0 && (await page.locator('input[placeholder="Chart title"]').count()) === 0);
+check("edit mode offers an Edit visually button", (await page.getByRole("button", { name: "Edit visually" }).count()) === 1);
+check("edit mode has no locked footer (toggle scrolls with content)", (await page.getByRole("button", { name: "Edit chart on slide" }).count()) === 1);
 // Edit a value in the table -> auto-apply re-renders on the slide.
 await page.getByRole("button", { name: "data", exact: true }).click();
 await page.waitForTimeout(150);
@@ -340,6 +343,23 @@ if (await valueInput.count()) {
 }
 const appliesAfter = await page.evaluate(() => window.__applyCount);
 check("editing a value auto-applies to the slide", appliesAfter > appliesBefore, `${appliesBefore} -> ${appliesAfter}`);
+// "Edit visually" opens the drag editor; dragging there also auto-applies to the slide.
+await page.getByRole("button", { name: "Edit visually" }).click();
+const editDialog = page.getByRole("dialog", { name: "Chart editor" });
+await editDialog.waitFor({ state: "visible", timeout: 8000 });
+check("Edit visually opens the drag editor", (await editDialog.count()) === 1);
+const vbar = editDialog.locator('g[style*="ns-resize"]').first();
+const vbox = await vbar.boundingBox();
+const beforeVisual = await page.evaluate(() => window.__applyCount);
+await page.mouse.move(vbox.x + vbox.width / 2, vbox.y + vbox.height / 2);
+await page.mouse.down();
+await page.mouse.move(vbox.x + vbox.width / 2, vbox.y - 50, { steps: 6 });
+await page.mouse.up();
+await page.waitForTimeout(750);
+const afterVisual = await page.evaluate(() => window.__applyCount);
+check("dragging in Edit visually auto-applies to the slide", afterVisual > beforeVisual, `${beforeVisual} -> ${afterVisual}`);
+await editDialog.getByRole("button", { name: "Collapse editor" }).click();
+await page.waitForTimeout(150);
 // Back to Mode 1 -> Insert returns, editing stops.
 await page.getByRole("button", { name: "Images & shapes" }).click();
 await page.waitForTimeout(150);

@@ -102,6 +102,8 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
 ) {
   const innerRef = useRef<SVGSVGElement | null>(null);
   const drag = useRef<DragState | null>(null);
+  // The DOM element being dragged (bar group / point), used to anchor the value label.
+  const dragElRef = useRef<Element | null>(null);
   // Floating value shown above the mark being dragged; cleared on release.
   const [dragLabel, setDragLabel] = useState<{ x: number; y: number; text: string } | null>(null);
   const idp = "c" + useId().replace(/[^a-zA-Z0-9]/g, "");
@@ -128,6 +130,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     if (!onEditValue) return;
     e.preventDefault();
     e.stopPropagation();
+    dragElRef.current = e.currentTarget as Element;
     drag.current = {
       mode: "1d",
       key,
@@ -149,6 +152,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     if (!onEditValue) return;
     e.preventDefault();
     e.stopPropagation();
+    dragElRef.current = e.currentTarget as Element;
     drag.current = {
       mode: "2d",
       row,
@@ -164,11 +168,21 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     innerRef.current?.setPointerCapture(e.pointerId);
   }
 
-  /** Position a floating value label at the pointer (in SVG coords), above the cursor. */
-  function setLabelAt(clientX: number, clientY: number, rect: DOMRect, text: string) {
-    const x = Math.max(18, Math.min(width - 18, ((clientX - rect.left) / rect.width) * width));
-    const y = Math.max(12, ((clientY - rect.top) / rect.height) * height - 16);
-    setDragLabel({ x, y, text });
+  /**
+   * Position the value label horizontally centered over the dragged item and 50px
+   * (screen) above its top, converting the item's on-screen box into SVG coords.
+   */
+  function updateDragLabel(text: string) {
+    const el = dragElRef.current;
+    const svg = innerRef.current;
+    if (!el || !svg) return;
+    const b = el.getBoundingClientRect();
+    const r = svg.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    const cx = ((b.left + b.width / 2 - r.left) / r.width) * width;
+    const topY = ((b.top - r.top) / r.height) * height;
+    const offset = 50 * (height / r.height); // 50 screen px, in SVG units
+    setDragLabel({ x: cx, y: topY - offset, text });
   }
 
   function onMove(e: ReactPointerEvent) {
@@ -203,7 +217,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
       });
       d.lastY = ny;
       onEditValue(d.keyY, d.row, ny);
-      setLabelAt(e.clientX, e.clientY, rect, nxLabel !== null ? `${fmt(nxLabel)}, ${fmt(ny)}` : fmt(ny));
+      updateDragLabel(nxLabel !== null ? `${fmt(nxLabel)}, ${fmt(ny)}` : fmt(ny));
       return;
     }
     const value = dragToValue({
@@ -217,7 +231,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     });
     d.last = value;
     onEditValue(d.key, d.row, value);
-    setLabelAt(e.clientX, e.clientY, rect, fmt(value));
+    updateDragLabel(fmt(value));
   }
 
   function onUp(e: ReactPointerEvent) {
@@ -233,6 +247,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
         }
       }
       drag.current = null;
+      dragElRef.current = null;
       setDragLabel(null); // hide the floating value when the drag ends
       innerRef.current?.releasePointerCapture?.(e.pointerId);
     }
