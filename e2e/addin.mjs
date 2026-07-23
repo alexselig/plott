@@ -123,6 +123,7 @@ await page.waitForTimeout(300);
 const dialog = page.getByRole("dialog", { name: "Chart editor" });
 check("expand opens the full-pane editor", (await dialog.count()) === 1);
 check("editor shows the drag-to-edit affordance", (await dialog.getByText("Drag to edit").count()) === 1);
+check("editor shows the values table below the chart", (await dialog.getByText("Values").count()) >= 1 && (await dialog.getByText("Add row").count()) === 1);
 // The editable bars are wrapped in a <g> with a ns-resize cursor; grab the first
 // and drag it upward, then confirm the bar geometry grew.
 const bar = dialog.locator('g[style*="ns-resize"]').first();
@@ -130,8 +131,13 @@ const before = await bar.boundingBox();
 await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
 await page.mouse.down();
 await page.mouse.move(before.x + before.width / 2, before.y - 60, { steps: 8 }); // drag up = larger value
+// Mid-drag: the floating value pill (dark rect) should be visible.
+const labelDuring = await dialog.locator('rect[fill="#1f1c17"]').count();
 await page.mouse.up();
 await page.waitForTimeout(200);
+const labelAfter = await dialog.locator('rect[fill="#1f1c17"]').count();
+check("drag shows a floating value label", labelDuring === 1, `during=${labelDuring}`);
+check("value label hides after releasing the drag", labelAfter === 0, `after=${labelAfter}`);
 const after = await bar.boundingBox();
 check("dragging a bar changes its value (bar grows)", after.height > before.height + 4, `${Math.round(before.height)} -> ${Math.round(after.height)}`);
 // Collapse and confirm the edit persisted into the small preview.

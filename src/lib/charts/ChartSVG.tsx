@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useId, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { forwardRef, useId, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { max as d3max } from "d3-array";
 import { scaleBand, scaleLinear, scalePoint } from "d3-scale";
@@ -102,6 +102,8 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
 ) {
   const innerRef = useRef<SVGSVGElement | null>(null);
   const drag = useRef<DragState | null>(null);
+  // Floating value shown above the mark being dragged; cleared on release.
+  const [dragLabel, setDragLabel] = useState<{ x: number; y: number; text: string } | null>(null);
   const idp = "c" + useId().replace(/[^a-zA-Z0-9]/g, "");
 
   const setRef = (el: SVGSVGElement | null) => {
@@ -162,12 +164,20 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     innerRef.current?.setPointerCapture(e.pointerId);
   }
 
+  /** Position a floating value label at the pointer (in SVG coords), above the cursor. */
+  function setLabelAt(clientX: number, clientY: number, rect: DOMRect, text: string) {
+    const x = Math.max(18, Math.min(width - 18, ((clientX - rect.left) / rect.width) * width));
+    const y = Math.max(12, ((clientY - rect.top) / rect.height) * height - 16);
+    setDragLabel({ x, y, text });
+  }
+
   function onMove(e: ReactPointerEvent) {
     const d = drag.current;
     if (!d || !onEditValue) return;
     const rect = innerRef.current?.getBoundingClientRect();
     if (!rect) return;
     if (d.mode === "2d") {
+      let nxLabel: number | null = null;
       if (d.keyX) {
         const nx = dragToValue({
           axis: "x",
@@ -179,6 +189,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
           rectLen: rect.width,
         });
         d.lastX = nx;
+        nxLabel = nx;
         onEditValue(d.keyX, d.row, nx);
       }
       const ny = dragToValue({
@@ -192,6 +203,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
       });
       d.lastY = ny;
       onEditValue(d.keyY, d.row, ny);
+      setLabelAt(e.clientX, e.clientY, rect, nxLabel !== null ? `${fmt(nxLabel)}, ${fmt(ny)}` : fmt(ny));
       return;
     }
     const value = dragToValue({
@@ -205,6 +217,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
     });
     d.last = value;
     onEditValue(d.key, d.row, value);
+    setLabelAt(e.clientX, e.clientY, rect, fmt(value));
   }
 
   function onUp(e: ReactPointerEvent) {
@@ -220,6 +233,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
         }
       }
       drag.current = null;
+      setDragLabel(null); // hide the floating value when the drag ends
       innerRef.current?.releasePointerCapture?.(e.pointerId);
     }
   }
@@ -309,6 +323,23 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
       {idBadge}
     </text>
   ) : null;
+  // Floating value pill shown above the dragged mark (drag-to-edit feedback).
+  const dragLabelEl = dragLabel
+    ? (() => {
+        const w = Math.max(26, dragLabel.text.length * 7 + 14);
+        const h = 19;
+        const x = Math.max(2, Math.min(width - w - 2, dragLabel.x - w / 2));
+        const y = Math.max(2, dragLabel.y - h);
+        return (
+          <g pointerEvents="none">
+            <rect x={x} y={y} width={w} height={h} rx={5} fill="#1f1c17" opacity={0.92} />
+            <text x={x + w / 2} y={y + h / 2 + 3.5} textAnchor="middle" fontSize={11} fontWeight={700} fill="#ffffff" fontFamily={labelFont}>
+              {dragLabel.text}
+            </text>
+          </g>
+        );
+      })()
+    : null;
   const legendEl = showLegend ? (
     <g transform={`translate(16,${legendY})`}>
       {(() => {
@@ -393,6 +424,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
         {(kind === "radar" || kind === "combo") && showLegend ? legendEl : null}
         {renderExtra({ spec, data, width, height, header, palette, labelColor, bg, treatment: T, s, idp, pointDrag: pointEditable ? pointDragProps : undefined })}
         {badgeEl}
+        {dragLabelEl}
       </svg>
     );
   }
@@ -632,6 +664,7 @@ const ChartSVG = forwardRef<SVGSVGElement, ChartSVGProps>(function ChartSVG(
         {markEls}
       </g>
         {badgeEl}
+        {dragLabelEl}
     </svg>
   );
 });

@@ -362,10 +362,10 @@ export default function AddinPane() {
               </button>
             </div>
           </div>
-          <div className="flex flex-1 items-center justify-center overflow-auto p-4">
+          <div className="flex flex-1 flex-col items-center gap-4 overflow-auto p-4">
             <div
-              className={`w-full max-w-[1040px] overflow-hidden rounded-xl border border-border shadow-[0_12px_34px_-14px_rgba(0,0,0,0.3)] ${transparent ? "cf-checkerboard" : ""}`}
-              style={{ aspectRatio: `${exportSize.width} / ${exportSize.height}` }}
+              className={`w-full max-w-[1040px] shrink-0 overflow-hidden rounded-xl border border-border shadow-[0_12px_34px_-14px_rgba(0,0,0,0.3)] ${transparent ? "cf-checkerboard" : ""}`}
+              style={{ aspectRatio: `${exportSize.width} / ${exportSize.height}`, maxHeight: "52vh" }}
             >
               <ChartSVG
                 spec={spec}
@@ -378,11 +378,16 @@ export default function AddinPane() {
                 onEditValue={canDragEdit ? editValue : undefined}
               />
             </div>
+            {/* Values table — edit numbers directly alongside the drag surface. */}
+            <div className="w-full max-w-[1040px]">
+              <div className="plott-mono mb-1.5 text-[10px] uppercase tracking-[0.12em] text-faint">Values</div>
+              <PlottDataTab spec={spec} data={data} onChange={setData} />
+            </div>
           </div>
           <div className="shrink-0 border-t border-border px-4 py-2 text-center text-[12px] text-muted">
             {canDragEdit
-              ? "Drag the bars or points to change values. Switch types, palette, and style in the pane — your edits carry through to the slide."
-              : "This chart type isn't drag-editable — set values in the Data tab. Collapse to keep styling."}
+              ? "Drag the bars or points to change values, or edit the table below. Type, palette, and style live in the pane."
+              : "This chart type isn't drag-editable — set values in the table below. Collapse to keep styling."}
           </div>
         </div>
       )}
